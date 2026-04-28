@@ -1,0 +1,43 @@
+{
+  "navigation": {
+    "menu": "Open navigation",
+    "notifications": "Notifications",
+    "logout": "Sign out",
+    "dashboard": "Dashboard",
+    "catalog": "Catalog",
+    "rfqs": "RFQs",
+    "rfq_inbox": "RFQ inbox",
+    "quotes": "Quotes",
+    "orders": "Orders",
+    "performance": "Performance",
+    "operations": "Operations",
+    "clients": "Clients",
+    "suppliers": "Suppliers",
+    "audit": "Audit",
+    "workspace": "Workspace",
+    "search": "Search requests, quotes, orders...",
+    "control_center": "Control center"
+  },
+  "client": {
+    "title": "Client Portal",
+    "description": "RFQs, approvals, orders, and procurement control"
+  },
+  "supplier": {
+    "title": "Supplier Portal",
+    "description": "Anonymous RFQs, quotations, and fulfillment"
+  },
+  "admin": {
+    "title": "Admin Portal",
+    "description": "Marketplace operations, pricing, and governance"
+  },
+  "actions": {
+    "back_to_dashboard": "Back to dashboard",
+    "new_request": "New request"
+  },
+  "states": {
+    "unauthorized_title": "Access is restricted",
+    "unauthorized_description": "Your current role cannot open this workspace.",
+    "not_found_title": "Page not found",
+    "not_found_description": "This route is not available in the current product scope."
+  }
+}

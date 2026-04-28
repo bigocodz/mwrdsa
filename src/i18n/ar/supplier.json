@@ -1,0 +1,16 @@
+{
+  "dashboard": {
+    "awaiting_response": "طلبات تسعير بانتظار الرد",
+    "awaiting_response_detail": "طلبات مجهولة مسندة من مورد",
+    "deadlines": "مواعيد قريبة",
+    "deadlines_detail": "مستحقة خلال 48 ساعة",
+    "active_orders": "طلبات نشطة",
+    "active_orders_detail": "تحتاج إلى تحديثات تنفيذ",
+    "response_rate": "معدل الاستجابة",
+    "response_rate_detail": "آخر 30 يوما",
+    "inbox": "صندوق طلبات التسعير",
+    "inbox_description": "تبقى هوية العميل مجهولة طوال سير العمل",
+    "sample_rfqs": ["منتجات مرافق بثلاثة بنود", "أحبار طابعات وملحقات", "طلب إعادة تعبئة للضيافة"],
+    "sample_statuses": ["مستحق قريبا", "مفتوح", "مفتوح"]
+  }
+}

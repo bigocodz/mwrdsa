@@ -1,0 +1,20 @@
+{
+  "dashboard": {
+    "active_rfqs": "طلبات تسعير نشطة",
+    "active_rfqs_detail": "ضمن مراحل الإرسال والتسعير",
+    "awaiting_decision": "عروض بانتظار القرار",
+    "awaiting_decision_detail": "تم إصدارها من مورد للمقارنة",
+    "pending_approval": "أوامر شراء بانتظار الموافقة",
+    "pending_approval_detail": "بانتظار المالية أو رؤساء الأقسام",
+    "active_orders": "طلبات نشطة",
+    "active_orders_detail": "مؤكدة أو قيد التجهيز أو الشحن",
+    "rfq_queue": "قائمة طلبات التسعير",
+    "rfq_queue_description": "طلبات مشتريات تتحرك عبر سير عمل مدار",
+    "alerts": "تنبيهات",
+    "alerts_description": "بنود مشتريات حساسة للوقت",
+    "quote_expiry_alert": "مجموعتان من العروض المعتمدة تنتهي خلال 24 ساعة.",
+    "delivery_delay_alert": "طلب نشط واحد تجاوز تاريخ التسليم المتوقع.",
+    "sample_items": ["حزمة مستلزمات تنظيف", "طلب ملحقات تقنية", "طلب تسعير متكرر لأثاث مكتبي"],
+    "sample_statuses": ["مراجعة الإدارة", "قيد التسعير", "تم الإصدار"]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "dashboard": {
+    "active_rfqs": "Active RFQs",
+    "active_rfqs_detail": "Across marketplace operations",
+    "pending_reviews": "Pending quote reviews",
+    "pending_reviews_detail": "Need margin and release decisions",
+    "margin": "Gross margin",
+    "margin_detail": "Approved client-facing quotes",
+    "revenue": "Tracked revenue",
+    "revenue_detail": "Current month operational view",
+    "review_queue": "Quote review queue",
+    "review_queue_description": "Admin-controlled pricing and release decisions",
+    "operational_risks": "Operational risks",
+    "operational_risks_description": "Exceptions that need admin attention",
+    "no_response_risk": "Three RFQs have no supplier response after the first SLA window.",
+    "margin_override_risk": "Two margin overrides need reason review before release.",
+    "sample_reviews": ["Four supplier quotes pending pricing review", "Supplier pool needs reassignment", "Quote validity expires today"],
+    "sample_priorities": ["High", "Medium", "Medium"]
+  }
+}

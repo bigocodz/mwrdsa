@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  src: url("/brand/fonts/Plus_Jakarta_Sans/PlusJakartaSans-VariableFont_wght.ttf") format("truetype");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Arabic";
+  src: url("/brand/fonts/IBM_Plex_Sans_Arabic/IBMPlexSansArabic-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Arabic";
+  src: url("/brand/fonts/IBM_Plex_Sans_Arabic/IBMPlexSansArabic-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --font-sans: "Plus Jakarta Sans";
+    --font-arabic: "IBM Plex Sans Arabic";
+    --background: 38 14% 96%;
+    --foreground: 0 0% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 10%;
+    --primary: 13 100% 63%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 194 55% 85%;
+    --secondary-foreground: 0 0% 10%;
+    --muted: 37 12% 88%;
+    --muted-foreground: 28 6% 37%;
+    --accent: 194 55% 90%;
+    --accent-foreground: 0 0% 10%;
+    --destructive: 354 79% 62%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 34 10% 82%;
+    --input: 34 10% 82%;
+    --ring: 13 100% 63%;
+    --radius: 0.5rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: var(--font-arabic), system-ui, sans-serif;
+    font-feature-settings: "ss01";
+  }
+
+  html[lang="en"] {
+    font-family: var(--font-sans), system-ui, sans-serif;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    margin: 0;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+}

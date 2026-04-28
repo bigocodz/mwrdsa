@@ -1,0 +1,43 @@
+{
+  "navigation": {
+    "menu": "فتح التنقل",
+    "notifications": "الإشعارات",
+    "logout": "تسجيل الخروج",
+    "dashboard": "لوحة التحكم",
+    "catalog": "الكتالوج",
+    "rfqs": "طلبات التسعير",
+    "rfq_inbox": "صندوق طلبات التسعير",
+    "quotes": "العروض",
+    "orders": "الطلبات",
+    "performance": "الأداء",
+    "operations": "العمليات",
+    "clients": "العملاء",
+    "suppliers": "الموردون",
+    "audit": "التدقيق",
+    "workspace": "مساحة العمل",
+    "search": "ابحث في الطلبات والعروض وأوامر الشراء...",
+    "control_center": "مركز التحكم"
+  },
+  "client": {
+    "title": "بوابة العميل",
+    "description": "طلبات التسعير والموافقات والطلبات وحوكمة المشتريات"
+  },
+  "supplier": {
+    "title": "بوابة المورد",
+    "description": "طلبات تسعير مجهولة وعروض وتنفيذ"
+  },
+  "admin": {
+    "title": "بوابة الإدارة",
+    "description": "عمليات السوق والتسعير والحوكمة"
+  },
+  "actions": {
+    "back_to_dashboard": "العودة إلى لوحة التحكم",
+    "new_request": "طلب جديد"
+  },
+  "states": {
+    "unauthorized_title": "الوصول مقيد",
+    "unauthorized_description": "دورك الحالي لا يسمح بفتح هذه المساحة.",
+    "not_found_title": "الصفحة غير موجودة",
+    "not_found_description": "هذا المسار غير متاح ضمن نطاق المنتج الحالي."
+  }
+}

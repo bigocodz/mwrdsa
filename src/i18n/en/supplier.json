@@ -1,0 +1,16 @@
+{
+  "dashboard": {
+    "awaiting_response": "RFQs awaiting response",
+    "awaiting_response_detail": "Anonymous requests assigned by MWRD",
+    "deadlines": "Upcoming deadlines",
+    "deadlines_detail": "Due in the next 48 hours",
+    "active_orders": "Active orders",
+    "active_orders_detail": "Requiring fulfillment updates",
+    "response_rate": "Response rate",
+    "response_rate_detail": "Last 30 days",
+    "inbox": "RFQ inbox",
+    "inbox_description": "Client identities stay anonymous throughout the workflow",
+    "sample_rfqs": ["Facilities products, three line items", "Printer toner and accessories", "Pantry restock request"],
+    "sample_statuses": ["Due soon", "Open", "Open"]
+  }
+}

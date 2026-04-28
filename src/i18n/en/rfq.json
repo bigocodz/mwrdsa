@@ -1,0 +1,20 @@
+{
+  "dashboard": {
+    "active_rfqs": "Active RFQs",
+    "active_rfqs_detail": "Across submitted and quoting stages",
+    "awaiting_decision": "Quotes awaiting decision",
+    "awaiting_decision_detail": "Released by MWRD for comparison",
+    "pending_approval": "POs pending approval",
+    "pending_approval_detail": "Waiting on finance or department heads",
+    "active_orders": "Active orders",
+    "active_orders_detail": "Confirmed, processing, or shipped",
+    "rfq_queue": "RFQ queue",
+    "rfq_queue_description": "Procurement requests moving through the managed workflow",
+    "alerts": "Alerts",
+    "alerts_description": "Time-sensitive procurement items",
+    "quote_expiry_alert": "Two released quote groups expire within 24 hours.",
+    "delivery_delay_alert": "One active order is past its expected delivery date.",
+    "sample_items": ["Cleaning supplies package", "IT accessories request", "Office furniture repeat RFQ"],
+    "sample_statuses": ["Admin review", "Quoting", "Released"]
+  }
+}
