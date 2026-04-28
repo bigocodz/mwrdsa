@@ -13,10 +13,7 @@
     "operations": "Operations",
     "clients": "Clients",
     "suppliers": "Suppliers",
-    "audit": "Audit",
-    "workspace": "Workspace",
-    "search": "Search requests, quotes, orders...",
-    "control_center": "Control center"
+    "audit": "Audit"
   },
   "client": {
     "title": "Client Portal",
@@ -31,8 +28,7 @@
     "description": "Marketplace operations, pricing, and governance"
   },
   "actions": {
-    "back_to_dashboard": "Back to dashboard",
-    "new_request": "New request"
+    "back_to_dashboard": "Back to dashboard"
   },
   "states": {
     "unauthorized_title": "Access is restricted",

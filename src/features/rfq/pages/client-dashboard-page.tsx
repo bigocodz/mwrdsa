@@ -1,4 +1,4 @@
-import { Clock3, FileCheck2, FileText, GitCompareArrows, LayoutDashboard, PackageCheck, PackageSearch, ScrollText, ShoppingBag } from "lucide-react";
+import { Clock3, FileCheck2, PackageCheck, ScrollText } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { MetricCard } from "@/components/metric-card";
 import { PortalShell } from "@/components/portal-shell";
@@ -9,20 +9,20 @@ export function ClientDashboardPage() {
   const { t } = useTranslation(["common", "rfq"]);
 
   const navItems = [
-    { label: t("navigation.dashboard", { ns: "common" }), href: "/client/dashboard", icon: <LayoutDashboard className="h-4 w-4" /> },
-    { label: t("navigation.catalog", { ns: "common" }), href: "/client/catalog", icon: <ShoppingBag className="h-4 w-4" /> },
-    { label: t("navigation.rfqs", { ns: "common" }), href: "/client/rfqs", icon: <FileText className="h-4 w-4" /> },
-    { label: t("navigation.quotes", { ns: "common" }), href: "/client/quotes", icon: <GitCompareArrows className="h-4 w-4" /> },
-    { label: t("navigation.orders", { ns: "common" }), href: "/client/orders", icon: <PackageSearch className="h-4 w-4" /> }
+    { label: t("navigation.dashboard", { ns: "common" }), href: "/client/dashboard" },
+    { label: t("navigation.catalog", { ns: "common" }), href: "/client/catalog" },
+    { label: t("navigation.rfqs", { ns: "common" }), href: "/client/rfqs" },
+    { label: t("navigation.quotes", { ns: "common" }), href: "/client/quotes" },
+    { label: t("navigation.orders", { ns: "common" }), href: "/client/orders" }
   ];
 
   return (
     <PortalShell title={t("client.title", { ns: "common" })} description={t("client.description", { ns: "common" })} navItems={navItems}>
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard title={t("dashboard.active_rfqs", { ns: "rfq" })} value="18" detail={t("dashboard.active_rfqs_detail", { ns: "rfq" })} icon={<ScrollText className="h-4 w-4" />} tone="orange" />
-        <MetricCard title={t("dashboard.awaiting_decision", { ns: "rfq" })} value="7" detail={t("dashboard.awaiting_decision_detail", { ns: "rfq" })} icon={<FileCheck2 className="h-4 w-4" />} tone="cyan" />
-        <MetricCard title={t("dashboard.pending_approval", { ns: "rfq" })} value="4" detail={t("dashboard.pending_approval_detail", { ns: "rfq" })} icon={<Clock3 className="h-4 w-4" />} tone="stone" />
-        <MetricCard title={t("dashboard.active_orders", { ns: "rfq" })} value="11" detail={t("dashboard.active_orders_detail", { ns: "rfq" })} icon={<PackageCheck className="h-4 w-4" />} tone="orange" />
+        <MetricCard title={t("dashboard.active_rfqs", { ns: "rfq" })} value="18" detail={t("dashboard.active_rfqs_detail", { ns: "rfq" })} icon={<ScrollText className="h-4 w-4 text-primary" />} />
+        <MetricCard title={t("dashboard.awaiting_decision", { ns: "rfq" })} value="7" detail={t("dashboard.awaiting_decision_detail", { ns: "rfq" })} icon={<FileCheck2 className="h-4 w-4 text-primary" />} />
+        <MetricCard title={t("dashboard.pending_approval", { ns: "rfq" })} value="4" detail={t("dashboard.pending_approval_detail", { ns: "rfq" })} icon={<Clock3 className="h-4 w-4 text-primary" />} />
+        <MetricCard title={t("dashboard.active_orders", { ns: "rfq" })} value="11" detail={t("dashboard.active_orders_detail", { ns: "rfq" })} icon={<PackageCheck className="h-4 w-4 text-primary" />} />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
@@ -33,8 +33,8 @@ export function ClientDashboardPage() {
           </CardHeader>
           <CardContent className="grid gap-3">
             {["RFQ-1042", "RFQ-1038", "RFQ-1031"].map((rfq, index) => (
-              <div key={rfq} className="flex items-center justify-between gap-3 rounded-md border bg-white/70 p-3">
-                <div className="min-w-0">
+              <div key={rfq} className="flex items-center justify-between rounded-md border p-3">
+                <div>
                   <p className="font-semibold">{rfq}</p>
                   <p className="text-sm text-muted-foreground">{t(`dashboard.sample_items.${index}`, { ns: "rfq" })}</p>
                 </div>

@@ -13,10 +13,7 @@
     "operations": "العمليات",
     "clients": "العملاء",
     "suppliers": "الموردون",
-    "audit": "التدقيق",
-    "workspace": "مساحة العمل",
-    "search": "ابحث في الطلبات والعروض وأوامر الشراء...",
-    "control_center": "مركز التحكم"
+    "audit": "التدقيق"
   },
   "client": {
     "title": "بوابة العميل",
@@ -31,8 +28,7 @@
     "description": "عمليات السوق والتسعير والحوكمة"
   },
   "actions": {
-    "back_to_dashboard": "العودة إلى لوحة التحكم",
-    "new_request": "طلب جديد"
+    "back_to_dashboard": "العودة إلى لوحة التحكم"
   },
   "states": {
     "unauthorized_title": "الوصول مقيد",
