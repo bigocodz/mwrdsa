@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { assertActiveUser, assertHasPermission, assertSameOrganization } from "./rbac";
 
 const rfqLineItemInput = v.object({
   productId: v.optional(v.id("products")),
@@ -19,6 +20,10 @@ export const createRfq = mutation({
     lineItems: v.array(rfqLineItemInput)
   },
   handler: async (ctx, args) => {
+    const actor = assertActiveUser(await ctx.db.get(args.createdByUserId));
+    assertHasPermission(actor, "rfq:create");
+    assertSameOrganization(actor, args.clientOrganizationId);
+
     const now = Date.now();
     const rfqId = await ctx.db.insert("rfqs", {
       clientOrganizationId: args.clientOrganizationId,
@@ -59,6 +64,14 @@ export const submitRfq = mutation({
     actorUserId: v.id("users")
   },
   handler: async (ctx, args) => {
+    const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
+    assertHasPermission(actor, "rfq:submit");
+    const rfq = await ctx.db.get(args.rfqId);
+    if (!rfq) {
+      throw new Error("RFQ not found.");
+    }
+    assertSameOrganization(actor, rfq.clientOrganizationId);
+
     const now = Date.now();
     await ctx.db.patch(args.rfqId, {
       status: "submitted",

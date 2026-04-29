@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { assertActiveUser, assertHasPermission, assertSameOrganization } from "./rbac";
 
 const quoteLineItemInput = v.object({
   rfqLineItemId: v.id("rfqLineItems"),
@@ -18,6 +19,10 @@ export const submitSupplierQuote = mutation({
     lineItems: v.array(quoteLineItemInput)
   },
   handler: async (ctx, args) => {
+    const actor = assertActiveUser(await ctx.db.get(args.submittedByUserId));
+    assertHasPermission(actor, "quote:submit");
+    assertSameOrganization(actor, args.supplierOrganizationId);
+
     const now = Date.now();
     const quoteId = await ctx.db.insert("supplierQuotes", {
       rfqId: args.rfqId,
@@ -61,6 +66,9 @@ export const approveQuoteForRelease = mutation({
     marginPercent: v.number()
   },
   handler: async (ctx, args) => {
+    const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
+    assertHasPermission(actor, "quote:apply_margin");
+
     const now = Date.now();
     const quoteItems = await ctx.db
       .query("supplierQuoteLineItems")

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { assertActiveUser, assertHasPermission, assertSameOrganization } from "./rbac";
 
 const userRole = v.union(
   v.literal("superAdmin"),
@@ -22,6 +23,7 @@ const userRole = v.union(
 
 export const inviteUser = mutation({
   args: {
+    actorUserId: v.id("users"),
     organizationId: v.id("organizations"),
     email: v.string(),
     name: v.string(),
@@ -29,6 +31,10 @@ export const inviteUser = mutation({
     language: v.union(v.literal("ar"), v.literal("en"))
   },
   handler: async (ctx, args) => {
+    const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
+    assertHasPermission(actor, "user:invite");
+    assertSameOrganization(actor, args.organizationId);
+
     const now = Date.now();
     const userId = await ctx.db.insert("users", {
       ...args,
@@ -38,7 +44,7 @@ export const inviteUser = mutation({
     });
 
     await ctx.db.insert("auditLogs", {
-      actorUserId: userId,
+      actorUserId: args.actorUserId,
       organizationId: args.organizationId,
       action: "user.invited",
       entityType: "user",
@@ -53,9 +59,14 @@ export const inviteUser = mutation({
 
 export const listUsersByOrganization = query({
   args: {
+    actorUserId: v.id("users"),
     organizationId: v.id("organizations")
   },
   handler: async (ctx, args) => {
+    const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
+    assertHasPermission(actor, "user:invite");
+    assertSameOrganization(actor, args.organizationId);
+
     return await ctx.db
       .query("users")
       .withIndex("by_organization", (q) => q.eq("organizationId", args.organizationId))

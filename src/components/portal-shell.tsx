@@ -1,6 +1,6 @@
 import { ChevronRight, LogOut, Menu, Plus } from "lucide-react";
 import type { ReactNode } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { BrandLogo } from "@/components/brand-logo";
 import { LanguageToggle } from "@/components/language-toggle";
@@ -26,11 +26,16 @@ type PortalShellProps = {
 
 export function PortalShell({ title, description, navItems, children, primaryActionLabel, primaryActionIcon }: PortalShellProps) {
   const { t, i18n } = useTranslation();
-  const { user } = useAuth();
+  const { signOut, user } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const isRtl = i18n.dir() === "rtl";
   const activeItem = navItems.find((item) => location.pathname === item.href || location.pathname.startsWith(`${item.href}/`)) ?? navItems[0];
   const actionIcon = primaryActionIcon ?? <Plus className="size-4" aria-hidden="true" />;
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/auth/login", { replace: true });
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -113,7 +118,7 @@ export function PortalShell({ title, description, navItems, children, primaryAct
                     {primaryActionLabel}
                   </Button>
                 ) : null}
-                <Button type="button" variant="ghost" size="icon" className="hidden sm:inline-flex" aria-label={t("navigation.logout")}>
+                <Button type="button" variant="ghost" size="icon" className="hidden sm:inline-flex" aria-label={t("navigation.logout")} onClick={handleSignOut}>
                   <LogOut className="size-5" aria-hidden="true" />
                 </Button>
               </div>

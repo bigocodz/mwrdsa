@@ -108,6 +108,7 @@ Required environment variables:
 
 ```text
 VITE_CONVEX_URL=
+VITE_CONVEX_SITE_URL=
 VITE_POSTHOG_KEY=
 VITE_POSTHOG_HOST=https://app.posthog.com
 SITE_URL=http://localhost:5173

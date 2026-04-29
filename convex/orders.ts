@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { assertActiveUser, assertHasAnyPermission, assertSameOrganization } from "./rbac";
 
 export const createOrderFromApprovedPo = mutation({
   args: {
@@ -38,6 +39,14 @@ export const updateOrderStatus = mutation({
     notes: v.optional(v.string())
   },
   handler: async (ctx, args) => {
+    const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
+    assertHasAnyPermission(actor, args.status === "receiptConfirmed" ? ["delivery:confirm"] : ["order:update_status"]);
+    const order = await ctx.db.get(args.orderId);
+    if (!order) {
+      throw new Error("Order not found.");
+    }
+    assertSameOrganization(actor, args.status === "receiptConfirmed" ? order.clientOrganizationId : order.supplierOrganizationId);
+
     const now = Date.now();
     await ctx.db.patch(args.orderId, {
       status: args.status,

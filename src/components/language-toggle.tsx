@@ -2,13 +2,17 @@ import { Languages } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { analyticsEvents, trackEvent } from "@/lib/analytics";
+import { useAuth } from "@/lib/auth";
+import type { SupportedLanguage } from "@/lib/i18n";
 
 export function LanguageToggle() {
   const { i18n } = useTranslation();
-  const nextLanguage = i18n.language === "ar" ? "en" : "ar";
+  const { setLanguagePreference } = useAuth();
+  const nextLanguage: SupportedLanguage = i18n.language === "ar" ? "en" : "ar";
 
   function handleLanguageSwitch() {
     void i18n.changeLanguage(nextLanguage);
+    setLanguagePreference(nextLanguage);
     trackEvent(analyticsEvents.languageSwitched, { language: nextLanguage });
   }
 

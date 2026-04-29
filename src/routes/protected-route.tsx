@@ -8,13 +8,17 @@ type ProtectedRouteProps = {
 };
 
 export function ProtectedRoute({ portal }: ProtectedRouteProps) {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
+
+  if (isLoading) {
+    return null;
+  }
 
   if (!isAuthenticated) {
     return <Navigate to="/auth/login" replace />;
   }
 
-  if (!user || !canAccessPortal(portal, user.roles)) {
+  if (!user || !canAccessPortal(portal, user.roles, user.portal)) {
     return <Navigate to="/unauthorized" replace />;
   }
 
