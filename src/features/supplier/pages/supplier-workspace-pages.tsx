@@ -1,8 +1,8 @@
-import { Download, FileCheck2 } from "lucide-react";
+import { FileCheck2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { PortalShell } from "@/components/portal-shell";
-import { DashboardCard, DashboardToolbar, DataTable, DateRangeButton, SparkBars, StatStrip, StatusBadge } from "@/components/portal-ui";
+import { DashboardCard, DashboardToolbar, DataTable, SparkBars, StatStrip, StatusBadge } from "@/components/portal-ui";
 import { Badge } from "@/components/ui/badge";
 import { localize, type LocalizedText } from "@/features/rfq/data/client-workflow-data";
 import { useSupplierNav } from "@/features/supplier/hooks/use-supplier-nav";
@@ -77,8 +77,8 @@ function SupplierFrame({
   title: string;
   description: string;
   children: ReactNode;
-  actionLabel: string;
-  actionIcon: ReactNode;
+  actionLabel?: string;
+  actionIcon?: ReactNode;
 }) {
   const navItems = useSupplierNav();
 
@@ -107,9 +107,7 @@ export function SupplierRfqsPage() {
           { label: localize({ en: "Eligible categories", ar: "فئات مؤهلة" }, i18n.language), value: "18", detail: localize({ en: "Matched supplier profile", ar: "مطابقة لملف المورد" }, i18n.language), trend: "+2", trendTone: "positive" }
         ]}
       />
-      <DashboardToolbar searchPlaceholder={localize({ en: "Search assigned RFQs...", ar: "ابحث في طلبات التسعير المسندة..." }, i18n.language)} filterLabel={t("actions.filter")} gridLabel={t("actions.grid_view")} listLabel={t("actions.list_view")}>
-        <DateRangeButton label={t("actions.last_7_days")} />
-      </DashboardToolbar>
+      <DashboardToolbar searchPlaceholder={localize({ en: "Search assigned RFQs...", ar: "ابحث في طلبات التسعير المسندة..." }, i18n.language)} />
       <DashboardCard title={t("navigation.rfq_inbox")}>
         <DataTable
           rows={supplierRfqs}
@@ -169,8 +167,6 @@ export function SupplierOrdersPage() {
     <SupplierFrame
       title={t("navigation.orders")}
       description={localize({ en: "Fulfillment updates for awarded orders", ar: "تحديثات تنفيذ الطلبات المعتمدة" }, i18n.language)}
-      actionLabel={t("actions.export")}
-      actionIcon={<Download className="size-4" aria-hidden="true" />}
     >
       <StatStrip
         stats={[
@@ -204,8 +200,6 @@ export function SupplierPerformancePage() {
     <SupplierFrame
       title={t("navigation.performance")}
       description={localize({ en: "Response quality, conversion, and fulfillment reliability", ar: "جودة الاستجابة والتحويل وموثوقية التنفيذ" }, i18n.language)}
-      actionLabel={t("actions.export")}
-      actionIcon={<Download className="size-4" aria-hidden="true" />}
     >
       <StatStrip
         stats={[

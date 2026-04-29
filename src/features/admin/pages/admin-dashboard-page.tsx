@@ -2,7 +2,6 @@ import { Send } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { PortalShell } from "@/components/portal-shell";
 import { DashboardCard, DataTable, SegmentedProgress, SparkBars, StatStrip, StatusBadge } from "@/components/portal-ui";
-import { Button } from "@/components/ui/button";
 import { localize } from "@/features/rfq/data/client-workflow-data";
 import { useAdminNav } from "@/features/admin/hooks/use-admin-nav";
 
@@ -60,7 +59,6 @@ export function AdminDashboardPage() {
             />
             <div className="rounded-lg bg-mwrd-sun/20 p-3 text-sm">{t("dashboard.no_response_risk", { ns: "admin" })}</div>
             <div className="rounded-lg bg-mwrd-red/10 p-3 text-sm">{t("dashboard.margin_override_risk", { ns: "admin" })}</div>
-            <Button type="button" variant="outline">{t("navigation.operations", { ns: "common" })}</Button>
           </div>
         </DashboardCard>
       </section>

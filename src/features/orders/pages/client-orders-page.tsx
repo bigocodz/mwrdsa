@@ -1,7 +1,7 @@
-import { CheckCircle2, Circle, Download, Truck } from "lucide-react";
+import { CheckCircle2, Circle, Truck } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { PortalShell } from "@/components/portal-shell";
-import { DashboardCard, DashboardToolbar, DataTable, DateRangeButton, StatStrip, StatusBadge } from "@/components/portal-ui";
+import { DashboardCard, DashboardToolbar, DataTable, StatStrip, StatusBadge } from "@/components/portal-ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { clientOrders, localize } from "@/features/rfq/data/client-workflow-data";
@@ -16,8 +16,6 @@ export function ClientOrdersPage() {
       title={t("orders:title")}
       description={t("orders:description")}
       navItems={navItems}
-      primaryActionLabel={t("actions.export", { ns: "common" })}
-      primaryActionIcon={<Download className="size-4" aria-hidden="true" />}
     >
       <StatStrip
         stats={[
@@ -30,12 +28,7 @@ export function ClientOrdersPage() {
 
       <DashboardToolbar
         searchPlaceholder={localize({ en: "Search orders...", ar: "ابحث في الطلبات..." }, i18n.language)}
-        filterLabel={t("actions.filter", { ns: "common" })}
-        gridLabel={t("actions.grid_view", { ns: "common" })}
-        listLabel={t("actions.list_view", { ns: "common" })}
-      >
-        <DateRangeButton label={t("actions.last_7_days", { ns: "common" })} />
-      </DashboardToolbar>
+      />
 
       <DashboardCard title={localize({ en: "Order tracking", ar: "متابعة الطلبات" }, i18n.language)}>
         <DataTable

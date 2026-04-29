@@ -1,4 +1,4 @@
-import { Bell, ChevronDown, ChevronRight, Headphones, LogOut, Menu, Plus, Search, Settings } from "lucide-react";
+import { ChevronRight, LogOut, Menu, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -43,9 +43,6 @@ export function PortalShell({ title, description, navItems, children, primaryAct
             <p className="truncate text-sm font-semibold text-foreground">MWRD</p>
             <p className="truncate text-sm text-muted-foreground">{title}</p>
           </div>
-          <Button type="button" variant="outline" size="icon" aria-label={t("navigation.menu")}>
-            <ChevronDown className="size-4" aria-hidden="true" />
-          </Button>
         </div>
 
         <Separator className="my-6 border-dashed" />
@@ -76,18 +73,6 @@ export function PortalShell({ title, description, navItems, children, primaryAct
             </NavLink>
           ))}
         </nav>
-
-        <div className="flex flex-col gap-2">
-          <p className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">{t("navigation.other")}</p>
-          <Button type="button" variant="ghost" className="justify-start text-muted-foreground">
-            <Settings className="size-4" aria-hidden="true" />
-            {t("navigation.settings")}
-          </Button>
-          <Button type="button" variant="ghost" className="justify-start text-muted-foreground">
-            <Headphones className="size-4" aria-hidden="true" />
-            {t("navigation.support")}
-          </Button>
-        </div>
 
         <Separator className="my-5" />
 
@@ -121,12 +106,6 @@ export function PortalShell({ title, description, navItems, children, primaryAct
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" variant="ghost" size="icon" aria-label={t("navigation.search")}>
-                  <Search className="size-5" aria-hidden="true" />
-                </Button>
-                <Button type="button" variant="ghost" size="icon" aria-label={t("navigation.notifications")}>
-                  <Bell className="size-5" aria-hidden="true" />
-                </Button>
                 <LanguageToggle />
                 {primaryActionLabel ? (
                   <Button type="button">

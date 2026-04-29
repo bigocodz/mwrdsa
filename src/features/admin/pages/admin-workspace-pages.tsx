@@ -1,8 +1,8 @@
-import { Download, Send } from "lucide-react";
+import { Send } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { PortalShell } from "@/components/portal-shell";
-import { DashboardCard, DashboardToolbar, DataTable, DateRangeButton, SparkBars, StatStrip, StatusBadge } from "@/components/portal-ui";
+import { DashboardCard, DashboardToolbar, DataTable, SparkBars, StatStrip, StatusBadge } from "@/components/portal-ui";
 import { Badge } from "@/components/ui/badge";
 import { localize, type LocalizedText } from "@/features/rfq/data/client-workflow-data";
 import { useAdminNav } from "@/features/admin/hooks/use-admin-nav";
@@ -51,8 +51,8 @@ function AdminFrame({
   title: string;
   description: string;
   children: ReactNode;
-  actionLabel: string;
-  actionIcon: ReactNode;
+  actionLabel?: string;
+  actionIcon?: ReactNode;
 }) {
   const navItems = useAdminNav();
 
@@ -81,9 +81,7 @@ export function AdminOperationsPage() {
           { label: localize({ en: "Released today", ar: "مصدر اليوم" }, i18n.language), value: "9", detail: localize({ en: "Quote groups", ar: "مجموعات عروض" }, i18n.language), trend: "+2", trendTone: "positive" }
         ]}
       />
-      <DashboardToolbar searchPlaceholder={localize({ en: "Search operations...", ar: "ابحث في العمليات..." }, i18n.language)} filterLabel={t("actions.filter")} gridLabel={t("actions.grid_view")} listLabel={t("actions.list_view")}>
-        <DateRangeButton label={t("actions.last_7_days")} />
-      </DashboardToolbar>
+      <DashboardToolbar searchPlaceholder={localize({ en: "Search operations...", ar: "ابحث في العمليات..." }, i18n.language)} />
       <DashboardCard title={t("navigation.operations")}>
         <DataTable
           rows={operations}
@@ -108,8 +106,6 @@ export function AdminClientsPage() {
     <AdminFrame
       title={t("navigation.clients")}
       description={localize({ en: "Buyer organizations, controls, and procurement activity", ar: "جهات الشراء والضوابط ونشاط المشتريات" }, i18n.language)}
-      actionLabel={t("actions.export")}
-      actionIcon={<Download className="size-4" aria-hidden="true" />}
     >
       <DirectoryPage
         rows={clients}
@@ -133,8 +129,6 @@ export function AdminSuppliersPage() {
     <AdminFrame
       title={t("navigation.suppliers")}
       description={localize({ en: "Supplier verification, performance, and category coverage", ar: "توثيق الموردين والأداء وتغطية الفئات" }, i18n.language)}
-      actionLabel={t("actions.export")}
-      actionIcon={<Download className="size-4" aria-hidden="true" />}
     >
       <DirectoryPage
         rows={suppliers}
@@ -158,8 +152,6 @@ export function AdminCatalogPage() {
     <AdminFrame
       title={t("navigation.catalog")}
       description={localize({ en: "Controlled catalog groups without public prices", ar: "مجموعات كتالوج مضبوطة بدون أسعار ظاهرة" }, i18n.language)}
-      actionLabel={t("actions.export")}
-      actionIcon={<Download className="size-4" aria-hidden="true" />}
     >
       <StatStrip
         stats={[
@@ -203,8 +195,6 @@ export function AdminAuditPage() {
     <AdminFrame
       title={t("navigation.audit")}
       description={localize({ en: "Operational trace for controlled marketplace actions", ar: "سجل تشغيلي لإجراءات السوق المضبوطة" }, i18n.language)}
-      actionLabel={t("actions.export")}
-      actionIcon={<Download className="size-4" aria-hidden="true" />}
     >
       <StatStrip
         stats={[
@@ -231,7 +221,7 @@ export function AdminAuditPage() {
 }
 
 function DirectoryPage({ rows, title, search, metricLabels }: { rows: DirectoryRow[]; title: string; search: string; metricLabels: string[] }) {
-  const { t, i18n } = useTranslation("common");
+  const { i18n } = useTranslation("common");
 
   return (
     <>
@@ -243,9 +233,7 @@ function DirectoryPage({ rows, title, search, metricLabels }: { rows: DirectoryR
           { label: metricLabels[3], value: "3", detail: localize({ en: "Open checks", ar: "فحوصات مفتوحة" }, i18n.language), trend: "-1", trendTone: "positive" }
         ]}
       />
-      <DashboardToolbar searchPlaceholder={search} filterLabel={t("actions.filter")} gridLabel={t("actions.grid_view")} listLabel={t("actions.list_view")}>
-        <DateRangeButton label={t("actions.last_month")} />
-      </DashboardToolbar>
+      <DashboardToolbar searchPlaceholder={search} />
       <DashboardCard title={title}>
         <DataTable
           rows={rows}

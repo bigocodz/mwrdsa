@@ -2,9 +2,6 @@
   "navigation": {
     "menu": "فتح التنقل",
     "main": "الرئيسية",
-    "other": "أخرى",
-    "search": "بحث",
-    "notifications": "الإشعارات",
     "logout": "تسجيل الخروج",
     "dashboard": "لوحة التحكم",
     "catalog": "الكتالوج",
@@ -16,9 +13,7 @@
     "operations": "العمليات",
     "clients": "العملاء",
     "suppliers": "الموردون",
-    "audit": "التدقيق",
-    "settings": "الإعدادات",
-    "support": "الدعم"
+    "audit": "التدقيق"
   },
   "client": {
     "title": "بوابة العميل",
@@ -36,13 +31,7 @@
     "back_to_dashboard": "العودة إلى لوحة التحكم",
     "new_rfq": "طلب تسعير جديد",
     "submit_quote": "إرسال عرض",
-    "release_quotes": "إصدار العروض",
-    "filter": "تصفية",
-    "grid_view": "عرض شبكي",
-    "list_view": "عرض قائمة",
-    "last_7_days": "آخر 7 أيام",
-    "last_month": "الشهر الماضي",
-    "export": "تصدير"
+    "release_quotes": "إصدار العروض"
   },
   "states": {
     "unauthorized_title": "الوصول مقيد",

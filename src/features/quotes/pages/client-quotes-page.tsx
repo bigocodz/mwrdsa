@@ -1,7 +1,7 @@
-import { CheckCircle2, Star } from "lucide-react";
+import { Star } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { PortalShell } from "@/components/portal-shell";
-import { DashboardCard, DashboardToolbar, DataTable, DateRangeButton, StatStrip, StatusBadge } from "@/components/portal-ui";
+import { DashboardCard, DashboardToolbar, DataTable, StatStrip, StatusBadge } from "@/components/portal-ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { clientQuotes, localize } from "@/features/rfq/data/client-workflow-data";
@@ -16,8 +16,6 @@ export function ClientQuotesPage() {
       title={t("quotes:title")}
       description={t("quotes:description")}
       navItems={navItems}
-      primaryActionLabel={localize({ en: "Approve quote", ar: "اعتماد عرض" }, i18n.language)}
-      primaryActionIcon={<CheckCircle2 className="size-4" aria-hidden="true" />}
     >
       <StatStrip
         stats={[
@@ -30,12 +28,7 @@ export function ClientQuotesPage() {
 
       <DashboardToolbar
         searchPlaceholder={localize({ en: "Search quote groups...", ar: "ابحث في مجموعات العروض..." }, i18n.language)}
-        filterLabel={t("actions.filter", { ns: "common" })}
-        gridLabel={t("actions.grid_view", { ns: "common" })}
-        listLabel={t("actions.list_view", { ns: "common" })}
-      >
-        <DateRangeButton label={t("actions.last_month", { ns: "common" })} />
-      </DashboardToolbar>
+      />
 
       <section className="grid gap-5 xl:grid-cols-3">
         {clientQuotes.map((quote, index) => (

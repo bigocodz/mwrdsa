@@ -1,9 +1,8 @@
-import { ArrowUpRight, ScrollText } from "lucide-react";
+import { ScrollText } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { PortalShell } from "@/components/portal-shell";
 import { DashboardCard, SegmentedProgress, SparkBars, StatStrip } from "@/components/portal-ui";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { localize } from "@/features/rfq/data/client-workflow-data";
 import { useClientNav } from "@/features/rfq/hooks/use-client-nav";
 
@@ -33,12 +32,6 @@ export function ClientDashboardPage() {
           title={t("dashboard.rfq_queue", { ns: "rfq" })}
           description={t("dashboard.rfq_queue_description", { ns: "rfq" })}
           className="xl:col-span-1"
-          action={
-            <Button type="button" variant="outline" size="sm">
-              <ArrowUpRight className="size-4" aria-hidden="true" />
-              {t("actions.last_month", { ns: "common" })}
-            </Button>
-          }
         >
           <div className="flex flex-col gap-3">
             {["RFQ-1042", "RFQ-1038", "RFQ-1031"].map((rfq, index) => (

@@ -1,7 +1,6 @@
-import { CalendarDays, Filter, Grid2X2, List, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -70,47 +69,17 @@ export function DashboardCard({
 }
 
 export function DashboardToolbar({
-  searchPlaceholder,
-  filterLabel = "Filter",
-  gridLabel = "Grid view",
-  listLabel = "List view",
-  children
+  searchPlaceholder
 }: {
   searchPlaceholder: string;
-  filterLabel?: string;
-  gridLabel?: string;
-  listLabel?: string;
-  children?: ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-      <label className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-input bg-card px-3 shadow-card">
+    <section>
+      <label className="flex min-w-0 items-center gap-2 rounded-lg border border-input bg-card px-3 shadow-card">
         <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         <Input className="border-0 bg-transparent px-0 shadow-none focus-visible:ring-0" placeholder={searchPlaceholder} />
       </label>
-      <div className="flex flex-wrap items-center gap-2">
-        {children}
-        <Button type="button" variant="outline" aria-label={gridLabel}>
-          <Grid2X2 className="size-4" aria-hidden="true" />
-        </Button>
-        <Button type="button" variant="outline" aria-label={listLabel}>
-          <List className="size-4" aria-hidden="true" />
-        </Button>
-        <Button type="button" variant="outline">
-          <Filter className="size-4" aria-hidden="true" />
-          {filterLabel}
-        </Button>
-      </div>
     </section>
-  );
-}
-
-export function DateRangeButton({ label }: { label: string }) {
-  return (
-    <Button type="button" variant="outline">
-      <CalendarDays className="size-4" aria-hidden="true" />
-      {label}
-    </Button>
   );
 }
 

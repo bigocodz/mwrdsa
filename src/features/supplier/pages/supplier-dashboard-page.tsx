@@ -2,7 +2,6 @@ import { FileCheck2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { PortalShell } from "@/components/portal-shell";
 import { DashboardCard, DataTable, SegmentedProgress, SparkBars, StatStrip, StatusBadge } from "@/components/portal-ui";
-import { Button } from "@/components/ui/button";
 import { localize } from "@/features/rfq/data/client-workflow-data";
 import { useSupplierNav } from "@/features/supplier/hooks/use-supplier-nav";
 
@@ -60,9 +59,6 @@ export function SupplierDashboardPage() {
               ]}
             />
           </div>
-          <Button type="button" variant="outline" className="mt-5 w-full">
-            {t("navigation.performance", { ns: "common" })}
-          </Button>
         </DashboardCard>
       </section>
     </PortalShell>

@@ -1,7 +1,7 @@
 import { CalendarDays, Plus, Send } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { PortalShell } from "@/components/portal-shell";
-import { DashboardCard, DashboardToolbar, DataTable, DateRangeButton, StatStrip, StatusBadge } from "@/components/portal-ui";
+import { DashboardCard, DashboardToolbar, DataTable, StatStrip, StatusBadge } from "@/components/portal-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { clientRfqs, localize } from "@/features/rfq/data/client-workflow-data";
@@ -30,12 +30,7 @@ export function ClientRfqsPage() {
 
       <DashboardToolbar
         searchPlaceholder={localize({ en: "Search RFQs...", ar: "ابحث في طلبات التسعير..." }, i18n.language)}
-        filterLabel={t("actions.filter", { ns: "common" })}
-        gridLabel={t("actions.grid_view", { ns: "common" })}
-        listLabel={t("actions.list_view", { ns: "common" })}
-      >
-        <DateRangeButton label={t("actions.last_7_days", { ns: "common" })} />
-      </DashboardToolbar>
+      />
 
       <section className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
         <DashboardCard title={t("rfq:pages.my_rfqs")} description={t("rfq:pages.my_rfqs_description")}>

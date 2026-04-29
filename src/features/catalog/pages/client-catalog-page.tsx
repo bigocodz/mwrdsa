@@ -1,7 +1,7 @@
-import { MoreVertical, PackageSearch, Plus } from "lucide-react";
+import { PackageSearch, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { PortalShell } from "@/components/portal-shell";
-import { DashboardToolbar, DateRangeButton, StatStrip } from "@/components/portal-ui";
+import { DashboardToolbar, StatStrip } from "@/components/portal-ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { catalogProducts, localize } from "@/features/rfq/data/client-workflow-data";
@@ -30,21 +30,14 @@ export function ClientCatalogPage() {
 
       <DashboardToolbar
         searchPlaceholder={t("catalog:search_placeholder")}
-        filterLabel={t("actions.filter", { ns: "common" })}
-        gridLabel={t("actions.grid_view", { ns: "common" })}
-        listLabel={t("actions.list_view", { ns: "common" })}
-      >
-        <DateRangeButton label={t("actions.last_7_days", { ns: "common" })} />
-      </DashboardToolbar>
+      />
 
       <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         {catalogProducts.map((product) => (
           <article key={product.id} className="flex min-h-[21rem] flex-col overflow-hidden rounded-lg border border-border/70 bg-card shadow-card">
             <div className="flex items-center justify-between px-5 pt-5">
               <span className="h-1.5 w-8 rounded-full bg-muted-foreground/40" />
-              <Button type="button" variant="ghost" size="icon" aria-label={product.sku}>
-                <MoreVertical className="size-4" aria-hidden="true" />
-              </Button>
+              <span className="text-xs font-semibold text-muted-foreground">{product.sku}</span>
             </div>
             <div className="mx-5 mt-3 grid flex-1 place-items-center rounded-lg bg-muted/55 p-8">
               <span className="grid size-24 place-items-center rounded-full bg-card text-primary shadow-card">
@@ -60,7 +53,6 @@ export function ClientCatalogPage() {
                 <Badge variant="info">{localize(product.category, i18n.language)}</Badge>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span className="text-xs font-semibold text-muted-foreground">{product.sku}</span>
                 <span className="text-sm text-muted-foreground">{localize(product.availability, i18n.language)}</span>
               </div>
               <Button type="button" size="sm">
