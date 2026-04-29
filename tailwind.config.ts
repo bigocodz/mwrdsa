@@ -56,7 +56,9 @@ const config = {
         arabic: ["var(--font-arabic)", "system-ui", "sans-serif"]
       },
       boxShadow: {
-        subtle: "0 16px 50px -32px rgba(26, 26, 26, 0.35)"
+        subtle: "0 16px 50px -32px rgba(26, 26, 26, 0.35)",
+        card: "0 1px 2px rgba(26, 26, 26, 0.04)",
+        action: "0 8px 18px -12px rgba(255, 109, 67, 0.75)"
       }
     }
   },

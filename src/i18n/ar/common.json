@@ -1,6 +1,9 @@
 {
   "navigation": {
     "menu": "فتح التنقل",
+    "main": "الرئيسية",
+    "other": "أخرى",
+    "search": "بحث",
     "notifications": "الإشعارات",
     "logout": "تسجيل الخروج",
     "dashboard": "لوحة التحكم",
@@ -13,7 +16,9 @@
     "operations": "العمليات",
     "clients": "العملاء",
     "suppliers": "الموردون",
-    "audit": "التدقيق"
+    "audit": "التدقيق",
+    "settings": "الإعدادات",
+    "support": "الدعم"
   },
   "client": {
     "title": "بوابة العميل",
@@ -28,7 +33,16 @@
     "description": "عمليات السوق والتسعير والحوكمة"
   },
   "actions": {
-    "back_to_dashboard": "العودة إلى لوحة التحكم"
+    "back_to_dashboard": "العودة إلى لوحة التحكم",
+    "new_rfq": "طلب تسعير جديد",
+    "submit_quote": "إرسال عرض",
+    "release_quotes": "إصدار العروض",
+    "filter": "تصفية",
+    "grid_view": "عرض شبكي",
+    "list_view": "عرض قائمة",
+    "last_7_days": "آخر 7 أيام",
+    "last_month": "الشهر الماضي",
+    "export": "تصدير"
   },
   "states": {
     "unauthorized_title": "الوصول مقيد",

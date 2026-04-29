@@ -1,6 +1,9 @@
 {
   "navigation": {
     "menu": "Open navigation",
+    "main": "Main",
+    "other": "Other",
+    "search": "Search",
     "notifications": "Notifications",
     "logout": "Sign out",
     "dashboard": "Dashboard",
@@ -13,7 +16,9 @@
     "operations": "Operations",
     "clients": "Clients",
     "suppliers": "Suppliers",
-    "audit": "Audit"
+    "audit": "Audit",
+    "settings": "Settings",
+    "support": "Support"
   },
   "client": {
     "title": "Client Portal",
@@ -28,7 +33,16 @@
     "description": "Marketplace operations, pricing, and governance"
   },
   "actions": {
-    "back_to_dashboard": "Back to dashboard"
+    "back_to_dashboard": "Back to dashboard",
+    "new_rfq": "New RFQ",
+    "submit_quote": "Submit quote",
+    "release_quotes": "Release quotes",
+    "filter": "Filter",
+    "grid_view": "Grid view",
+    "list_view": "List view",
+    "last_7_days": "Last 7 days",
+    "last_month": "Last month",
+    "export": "Export"
   },
   "states": {
     "unauthorized_title": "Access is restricted",

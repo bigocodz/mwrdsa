@@ -1,11 +1,13 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AdminDashboardPage } from "@/features/admin/pages/admin-dashboard-page";
+import { AdminAuditPage, AdminCatalogPage, AdminClientsPage, AdminOperationsPage, AdminSuppliersPage } from "@/features/admin/pages/admin-workspace-pages";
 import { ClientCatalogPage } from "@/features/catalog/pages/client-catalog-page";
 import { ClientOrdersPage } from "@/features/orders/pages/client-orders-page";
 import { ClientQuotesPage } from "@/features/quotes/pages/client-quotes-page";
 import { ClientDashboardPage } from "@/features/rfq/pages/client-dashboard-page";
 import { ClientRfqsPage } from "@/features/rfq/pages/client-rfqs-page";
 import { SupplierDashboardPage } from "@/features/supplier/pages/supplier-dashboard-page";
+import { SupplierOrdersPage, SupplierPerformancePage, SupplierQuotesPage, SupplierRfqsPage } from "@/features/supplier/pages/supplier-workspace-pages";
 import { LoginPage } from "@/pages/login-page";
 import { NotFoundPage } from "@/pages/not-found-page";
 import { RootLandingBoundaryPage } from "@/pages/root-landing-boundary-page";
@@ -42,7 +44,11 @@ export const router = createBrowserRouter([
     element: <ProtectedRoute portal="supplier" />,
     children: [
       { index: true, element: <Navigate to="/supplier/dashboard" replace /> },
-      { path: "dashboard", element: <SupplierDashboardPage /> }
+      { path: "dashboard", element: <SupplierDashboardPage /> },
+      { path: "rfqs", element: <SupplierRfqsPage /> },
+      { path: "quotes", element: <SupplierQuotesPage /> },
+      { path: "orders", element: <SupplierOrdersPage /> },
+      { path: "performance", element: <SupplierPerformancePage /> }
     ]
   },
   {
@@ -50,7 +56,12 @@ export const router = createBrowserRouter([
     element: <ProtectedRoute portal="admin" />,
     children: [
       { index: true, element: <Navigate to="/admin/dashboard" replace /> },
-      { path: "dashboard", element: <AdminDashboardPage /> }
+      { path: "dashboard", element: <AdminDashboardPage /> },
+      { path: "operations", element: <AdminOperationsPage /> },
+      { path: "clients", element: <AdminClientsPage /> },
+      { path: "suppliers", element: <AdminSuppliersPage /> },
+      { path: "catalog", element: <AdminCatalogPage /> },
+      { path: "audit", element: <AdminAuditPage /> }
     ]
   },
   {

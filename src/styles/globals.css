@@ -30,7 +30,7 @@
   :root {
     --font-sans: "Plus Jakarta Sans";
     --font-arabic: "IBM Plex Sans Arabic";
-    --background: 38 14% 96%;
+    --background: 36 21% 98%;
     --foreground: 0 0% 10%;
     --card: 0 0% 100%;
     --card-foreground: 0 0% 10%;
@@ -38,14 +38,14 @@
     --primary-foreground: 0 0% 100%;
     --secondary: 194 55% 85%;
     --secondary-foreground: 0 0% 10%;
-    --muted: 37 12% 88%;
-    --muted-foreground: 28 6% 37%;
-    --accent: 194 55% 90%;
+    --muted: 36 12% 93%;
+    --muted-foreground: 28 5% 42%;
+    --accent: 25 18% 95%;
     --accent-foreground: 0 0% 10%;
     --destructive: 354 79% 62%;
     --destructive-foreground: 0 0% 100%;
-    --border: 34 10% 82%;
-    --input: 34 10% 82%;
+    --border: 30 12% 88%;
+    --input: 30 12% 88%;
     --ring: 13 100% 63%;
     --radius: 0.5rem;
   }
