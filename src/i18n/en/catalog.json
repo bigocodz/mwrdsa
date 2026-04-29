@@ -1,4 +1,8 @@
 {
   "title": "Catalog",
-  "empty": "Catalog items will appear here without client-visible prices."
+  "description": "Browse approved catalog items and prepare RFQs without exposed prices.",
+  "empty": "Catalog items will appear here without client-visible prices.",
+  "search_placeholder": "Search by product, SKU, or category",
+  "no_prices": "No catalog prices shown",
+  "add_to_rfq": "Add to RFQ"
 }

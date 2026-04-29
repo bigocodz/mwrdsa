@@ -1,4 +1,19 @@
 {
+  "pages": {
+    "rfqs_title": "My RFQs",
+    "rfqs_description": "Create, track, and repeat procurement requests.",
+    "my_rfqs": "RFQ workspace",
+    "my_rfqs_description": "Requests stay internal until MWRD releases anonymous quotes.",
+    "create_rfq": "Create RFQ draft",
+    "create_rfq_description": "Start a request from catalog or non-catalog items."
+  },
+  "form": {
+    "item": "Item",
+    "item_placeholder": "Describe the required item",
+    "quantity": "Quantity",
+    "delivery_date": "Required delivery date",
+    "save_draft": "Save draft"
+  },
   "dashboard": {
     "active_rfqs": "Active RFQs",
     "active_rfqs_detail": "Across submitted and quoting stages",

@@ -1,4 +1,7 @@
 {
   "title": "Quotes",
-  "empty": "Approved anonymous quotes will appear here."
+  "description": "Compare admin-approved anonymous supplier quotes side by side.",
+  "empty": "Approved anonymous quotes will appear here.",
+  "lead_time": "Lead time",
+  "select_quote": "Select quote"
 }

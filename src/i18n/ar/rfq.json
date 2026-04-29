@@ -1,4 +1,19 @@
 {
+  "pages": {
+    "rfqs_title": "طلبات التسعير",
+    "rfqs_description": "أنشئ وتابع وكرر طلبات المشتريات.",
+    "my_rfqs": "مساحة طلبات التسعير",
+    "my_rfqs_description": "تبقى الطلبات داخلية حتى تصدر مورد العروض المجهولة.",
+    "create_rfq": "إنشاء مسودة طلب تسعير",
+    "create_rfq_description": "ابدأ طلباً من الكتالوج أو من خارج الكتالوج."
+  },
+  "form": {
+    "item": "البند",
+    "item_placeholder": "اكتب وصف البند المطلوب",
+    "quantity": "الكمية",
+    "delivery_date": "تاريخ التسليم المطلوب",
+    "save_draft": "حفظ كمسودة"
+  },
   "dashboard": {
     "active_rfqs": "طلبات تسعير نشطة",
     "active_rfqs_detail": "ضمن مراحل الإرسال والتسعير",

@@ -1,4 +1,10 @@
 {
   "title": "Orders",
-  "empty": "Purchase orders and fulfillment updates will appear here."
+  "description": "Track purchase orders, supplier updates, and receipt confirmation.",
+  "empty": "Purchase orders and fulfillment updates will appear here.",
+  "steps": {
+    "po_sent": "PO sent to supplier",
+    "receipt_confirmation": "Receipt confirmation"
+  },
+  "confirm_receipt": "Confirm receipt"
 }
