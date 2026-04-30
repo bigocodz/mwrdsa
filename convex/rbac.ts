@@ -23,6 +23,8 @@ type Permission =
   | "catalog:manage"
   | "rfq:create"
   | "rfq:submit"
+  | "rfq:operations"
+  | "po:approve"
   | "quote:submit"
   | "quote:apply_margin"
   | "quote:release"
@@ -37,18 +39,18 @@ type UserLike = {
 };
 
 const rolePermissionMatrix = {
-  superAdmin: ["organization:create", "organization:update", "user:invite", "catalog:manage", "rfq:create", "rfq:submit", "quote:submit", "quote:apply_margin", "quote:release", "order:update_status", "delivery:confirm", "audit:view"],
-  operationsManager: ["organization:update", "rfq:submit", "audit:view"],
-  pricingAnalyst: ["quote:apply_margin", "quote:release", "audit:view"],
-  accountManager: ["organization:create", "organization:update", "user:invite", "audit:view"],
+  superAdmin: ["organization:create", "organization:update", "user:invite", "catalog:manage", "rfq:create", "rfq:submit", "rfq:operations", "po:approve", "quote:submit", "quote:apply_margin", "quote:release", "order:update_status", "delivery:confirm", "audit:view"],
+  operationsManager: ["organization:update", "rfq:submit", "rfq:operations", "audit:view"],
+  pricingAnalyst: ["quote:apply_margin", "quote:release", "rfq:operations", "audit:view"],
+  accountManager: ["organization:create", "organization:update", "user:invite", "rfq:operations", "audit:view"],
   catalogManager: ["catalog:manage", "audit:view"],
   reportingAnalyst: ["audit:view"],
-  orgAdmin: ["user:invite", "rfq:create", "rfq:submit", "delivery:confirm"],
-  procurementManager: ["rfq:create", "rfq:submit", "delivery:confirm"],
+  orgAdmin: ["user:invite", "rfq:create", "rfq:submit", "po:approve", "delivery:confirm"],
+  procurementManager: ["rfq:create", "rfq:submit", "po:approve", "delivery:confirm"],
   procurementOfficer: ["rfq:create", "rfq:submit"],
   requester: ["rfq:create", "rfq:submit"],
-  financeApprover: ["delivery:confirm"],
-  departmentHead: ["delivery:confirm"],
+  financeApprover: ["po:approve", "delivery:confirm"],
+  departmentHead: ["po:approve", "delivery:confirm"],
   supplierAdmin: ["user:invite", "quote:submit", "order:update_status"],
   quotationOfficer: ["quote:submit"],
   operationsOfficer: ["order:update_status"],

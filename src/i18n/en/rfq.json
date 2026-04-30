@@ -11,8 +11,29 @@
     "item": "Item",
     "item_placeholder": "Describe the required item",
     "quantity": "Quantity",
+    "unit": "Unit",
+    "unit_placeholder": "unit",
     "delivery_date": "Required delivery date",
-    "save_draft": "Save draft"
+    "notes": "Notes",
+    "notes_placeholder": "Optional context for MWRD",
+    "is_non_catalog": "Non-catalog request",
+    "save_draft": "Save draft",
+    "submit": "Submit to MWRD",
+    "remove_item": "Remove",
+    "add_line": "Add line item"
+  },
+  "status": {
+    "draft": "Draft",
+    "submitted": "Submitted",
+    "matching": "Matching",
+    "assigned": "Assigned",
+    "quoting": "Quoting",
+    "adminReview": "Admin review",
+    "released": "Released",
+    "selected": "Selected",
+    "poGenerated": "PO generated",
+    "cancelled": "Cancelled",
+    "expired": "Expired"
   },
   "dashboard": {
     "active_rfqs": "Active RFQs",

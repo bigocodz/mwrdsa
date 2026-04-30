@@ -4,6 +4,7 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { BrandLogo } from "@/components/brand-logo";
 import { LanguageToggle } from "@/components/language-toggle";
+import { NotificationBell } from "@/components/notification-bell";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/lib/auth";
@@ -22,9 +23,10 @@ type PortalShellProps = {
   children: ReactNode;
   primaryActionLabel?: string;
   primaryActionIcon?: ReactNode;
+  onPrimaryAction?: () => void;
 };
 
-export function PortalShell({ title, description, navItems, children, primaryActionLabel, primaryActionIcon }: PortalShellProps) {
+export function PortalShell({ title, description, navItems, children, primaryActionLabel, primaryActionIcon, onPrimaryAction }: PortalShellProps) {
   const { t, i18n } = useTranslation();
   const { signOut, user } = useAuth();
   const location = useLocation();
@@ -111,9 +113,10 @@ export function PortalShell({ title, description, navItems, children, primaryAct
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                <NotificationBell />
                 <LanguageToggle />
                 {primaryActionLabel ? (
-                  <Button type="button">
+                  <Button type="button" onClick={onPrimaryAction}>
                     {actionIcon}
                     {primaryActionLabel}
                   </Button>

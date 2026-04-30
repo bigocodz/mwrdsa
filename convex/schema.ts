@@ -241,6 +241,19 @@ export default defineSchema({
     createdAt: v.number()
   }).index("by_order", ["orderId"]),
 
+  disputes: defineTable({
+    orderId: v.id("orders"),
+    openedByUserId: v.id("users"),
+    organizationId: v.id("organizations"),
+    subject: v.string(),
+    description: v.string(),
+    status: v.union(v.literal("open"), v.literal("acknowledged"), v.literal("resolved"), v.literal("closed")),
+    createdAt: v.number(),
+    updatedAt: v.number()
+  })
+    .index("by_order", ["orderId"])
+    .index("by_status", ["status"]),
+
   notifications: defineTable({
     recipientUserId: v.id("users"),
     type: v.string(),

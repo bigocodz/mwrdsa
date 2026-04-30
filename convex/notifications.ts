@@ -1,7 +1,33 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import { assertActiveUser } from "./rbac";
 
-export const createNotification = mutation({
+export async function notifyOrganization(
+  ctx: MutationCtx,
+  organizationId: Id<"organizations">,
+  payload: { type: string; titleAr: string; titleEn: string; bodyAr: string; bodyEn: string }
+) {
+  const users = await ctx.db
+    .query("users")
+    .withIndex("by_organization", (q) => q.eq("organizationId", organizationId))
+    .collect();
+  const now = Date.now();
+  for (const user of users) {
+    if (user.status !== "active") continue;
+    await ctx.db.insert("notifications", {
+      recipientUserId: user._id,
+      type: payload.type,
+      titleAr: payload.titleAr,
+      titleEn: payload.titleEn,
+      bodyAr: payload.bodyAr,
+      bodyEn: payload.bodyEn,
+      createdAt: now
+    });
+  }
+}
+
+export const createNotification = internalMutation({
   args: {
     recipientUserId: v.id("users"),
     type: v.string(),
@@ -15,6 +41,83 @@ export const createNotification = mutation({
       ...args,
       createdAt: Date.now()
     });
+  }
+});
+
+export const listNotificationsForActor = query({
+  args: {
+    actorUserId: v.id("users")
+  },
+  handler: async (ctx, args) => {
+    assertActiveUser(await ctx.db.get(args.actorUserId));
+    const notifications = await ctx.db
+      .query("notifications")
+      .withIndex("by_recipient", (q) => q.eq("recipientUserId", args.actorUserId))
+      .order("desc")
+      .take(100);
+    return notifications.map((entry) => ({
+      _id: entry._id,
+      type: entry.type,
+      titleAr: entry.titleAr,
+      titleEn: entry.titleEn,
+      bodyAr: entry.bodyAr,
+      bodyEn: entry.bodyEn,
+      readAt: entry.readAt,
+      createdAt: entry.createdAt
+    }));
+  }
+});
+
+export const countUnreadNotificationsForActor = query({
+  args: {
+    actorUserId: v.id("users")
+  },
+  handler: async (ctx, args) => {
+    assertActiveUser(await ctx.db.get(args.actorUserId));
+    const notifications = await ctx.db
+      .query("notifications")
+      .withIndex("by_recipient", (q) => q.eq("recipientUserId", args.actorUserId))
+      .collect();
+    return notifications.filter((entry) => !entry.readAt).length;
+  }
+});
+
+export const markNotificationRead = mutation({
+  args: {
+    actorUserId: v.id("users"),
+    notificationId: v.id("notifications")
+  },
+  handler: async (ctx, args) => {
+    assertActiveUser(await ctx.db.get(args.actorUserId));
+    const notification = await ctx.db.get(args.notificationId);
+    if (!notification) {
+      throw new Error("Notification not found.");
+    }
+    if (notification.recipientUserId !== args.actorUserId) {
+      throw new Error("Cross-recipient access is not allowed.");
+    }
+    if (!notification.readAt) {
+      await ctx.db.patch(args.notificationId, { readAt: Date.now() });
+    }
+  }
+});
+
+export const markAllNotificationsRead = mutation({
+  args: {
+    actorUserId: v.id("users")
+  },
+  handler: async (ctx, args) => {
+    assertActiveUser(await ctx.db.get(args.actorUserId));
+    const notifications = await ctx.db
+      .query("notifications")
+      .withIndex("by_recipient", (q) => q.eq("recipientUserId", args.actorUserId))
+      .collect();
+    const now = Date.now();
+    for (const entry of notifications) {
+      if (!entry.readAt) {
+        await ctx.db.patch(entry._id, { readAt: now });
+      }
+    }
   }
 });
 

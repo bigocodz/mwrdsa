@@ -1,75 +1,123 @@
-import { Star } from "lucide-react";
+import { useQuery } from "convex/react";
+import { CalendarDays, ScrollText } from "lucide-react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
+import { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import { PortalShell } from "@/components/portal-shell";
 import { DashboardCard, DashboardToolbar, DataTable, StatStrip, StatusBadge } from "@/components/portal-ui";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { clientQuotes, localize } from "@/features/rfq/data/client-workflow-data";
+import { localize } from "@/features/rfq/data/client-workflow-data";
 import { useClientNav } from "@/features/rfq/hooks/use-client-nav";
+import { useAuth } from "@/lib/auth";
+import { isBetterAuthConfigured } from "@/lib/auth-client";
+
+function formatCurrency(amount: number, language: string) {
+  return new Intl.NumberFormat(language === "ar" ? "ar-SA" : "en-US", {
+    style: "currency",
+    currency: "SAR",
+    maximumFractionDigits: 2
+  }).format(amount);
+}
+
+function formatDate(timestamp: number, language: string) {
+  return new Intl.DateTimeFormat(language === "ar" ? "ar-SA" : "en-US", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  }).format(new Date(timestamp));
+}
 
 export function ClientQuotesPage() {
   const { t, i18n } = useTranslation(["common", "quotes"]);
   const navItems = useClientNav();
+  const { user } = useAuth();
+  const language = i18n.language;
+  const queryArgs = isBetterAuthConfigured && user ? { actorUserId: user.id as Id<"users"> } : "skip";
+  const releasedRfqs = useQuery(api.quotes.listReleasedRfqsForClient, queryArgs);
+  const [searchValue, setSearchValue] = useState("");
+
+  const rows = useMemo(() => {
+    const source = releasedRfqs ?? [];
+    const search = searchValue.trim().toLowerCase();
+    if (!search) return source;
+    return source.filter((rfq) => [rfq._id, rfq.status].some((value) => value?.toLowerCase().includes(search)));
+  }, [releasedRfqs, searchValue]);
+
+  const totals = useMemo(() => {
+    const source = releasedRfqs ?? [];
+    return {
+      released: source.length,
+      pendingDecision: source.filter((rfq) => rfq.status === "released" && rfq.selectedCount === 0).length,
+      decided: source.filter((rfq) => rfq.status === "selected" || rfq.status === "poGenerated").length,
+      anonymizedQuotes: source.reduce((sum, rfq) => sum + rfq.releasedQuoteCount, 0)
+    };
+  }, [releasedRfqs]);
 
   return (
-    <PortalShell
-      title={t("quotes:title")}
-      description={t("quotes:description")}
-      navItems={navItems}
-    >
+    <PortalShell title={t("quotes:title")} description={t("quotes:description")} navItems={navItems}>
       <StatStrip
         stats={[
-          { label: localize({ en: "Released groups", ar: "مجموعات مصدرة" }, i18n.language), value: "7", detail: localize({ en: "Ready for client decision", ar: "جاهزة لقرار العميل" }, i18n.language), trend: "+3", trendTone: "positive" },
-          { label: localize({ en: "Average margin", ar: "متوسط الهامش" }, i18n.language), value: "14.2%", detail: localize({ en: "Already added by admin", ar: "مضافة من الإدارة" }, i18n.language), trend: "+1.8%", trendTone: "positive" },
-          { label: localize({ en: "Expiring soon", ar: "تنتهي قريبا" }, i18n.language), value: "2", detail: localize({ en: "Within 24 hours", ar: "خلال 24 ساعة" }, i18n.language), trend: "-1", trendTone: "negative" },
-          { label: localize({ en: "Anonymized suppliers", ar: "موردون مجهولون" }, i18n.language), value: "12", detail: localize({ en: "Across active quote groups", ar: "ضمن مجموعات العروض النشطة" }, i18n.language), trend: "+4", trendTone: "positive" }
+          { label: localize({ en: "Released RFQs", ar: "طلبات مصدرة" }, language), value: String(totals.released), detail: localize({ en: "Quote groups available", ar: "مجموعات عروض متاحة" }, language) },
+          { label: localize({ en: "Pending decision", ar: "بانتظار القرار" }, language), value: String(totals.pendingDecision), detail: localize({ en: "Awaiting your selection", ar: "بانتظار اختيارك" }, language), trendTone: "positive" },
+          { label: localize({ en: "Locked / decided", ar: "محسومة / مقفلة" }, language), value: String(totals.decided), detail: localize({ en: "Selection captured", ar: "تم تسجيل الاختيار" }, language), trendTone: "positive" },
+          { label: localize({ en: "Anonymized suppliers", ar: "موردون مجهولون" }, language), value: String(totals.anonymizedQuotes), detail: localize({ en: "Across released groups", ar: "ضمن المجموعات المصدرة" }, language) }
         ]}
       />
 
       <DashboardToolbar
-        searchPlaceholder={localize({ en: "Search quote groups...", ar: "ابحث في مجموعات العروض..." }, i18n.language)}
+        searchPlaceholder={localize({ en: "Search released RFQs...", ar: "ابحث في الطلبات المصدرة..." }, language)}
+        searchValue={searchValue}
+        onSearchChange={(event) => setSearchValue(event.target.value)}
       />
 
-      <section className="grid gap-5 xl:grid-cols-3">
-        {clientQuotes.map((quote, index) => (
-          <article key={quote.id} className="rounded-lg border border-border/70 bg-card p-5 shadow-card">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Badge variant={index === 1 ? "info" : "outline"}>{quote.supplierAnonymousId}</Badge>
-              </div>
-              <span className="flex items-center gap-1 text-sm font-semibold">
-                <Star className="size-4 fill-mwrd-sun text-mwrd-sun" aria-hidden="true" />
-                {quote.rating}
-              </span>
-            </div>
-            <div className="mt-8">
-              <p className="text-sm font-semibold text-muted-foreground">{quote.id}</p>
-              <p className="mt-2 text-3xl font-semibold">{quote.finalPrice}</p>
-              <p className="mt-1 text-sm text-muted-foreground">{localize(quote.validity, i18n.language)}</p>
-            </div>
-            <div className="mt-5 flex flex-col gap-4">
-              <div className="rounded-lg border border-border/70 bg-background/65 p-3 text-sm">
-                <span className="text-muted-foreground">{t("quotes:lead_time")}</span>
-                <p className="mt-1 font-semibold">{localize(quote.leadTime, i18n.language)}</p>
-              </div>
-              <Button type="button" variant={index === 1 ? "default" : "outline"}>
-                {t("quotes:select_quote")}
-              </Button>
-            </div>
-          </article>
-        ))}
-      </section>
-
-      <DashboardCard title={localize({ en: "Released quote comparison", ar: "مقارنة العروض المصدرة" }, i18n.language)}>
+      <DashboardCard title={localize({ en: "Released quote groups", ar: "مجموعات العروض المصدرة" }, language)} description={localize({ en: "Open a group to compare anonymous quotes side-by-side and lock your selection.", ar: "افتح مجموعة لمقارنة العروض المجهولة جنباً إلى جنب وقفل اختيارك." }, language)}>
         <DataTable
-          rows={clientQuotes}
-          getRowKey={(quote) => quote.id}
+          rows={rows}
+          emptyLabel={releasedRfqs === undefined ? localize({ en: "Loading...", ar: "جار التحميل..." }, language) : localize({ en: "No released quotes yet.", ar: "لا توجد عروض مصدرة بعد." }, language)}
+          getRowKey={(rfq) => rfq._id}
           columns={[
-            { header: "ID", cell: (quote) => <span className="font-semibold">{quote.id}</span> },
-            { header: localize({ en: "Supplier", ar: "المورد" }, i18n.language), cell: (quote) => <Badge variant="outline">{quote.supplierAnonymousId}</Badge> },
-            { header: localize({ en: "Final price", ar: "السعر النهائي" }, i18n.language), cell: (quote) => <span className="font-semibold">{quote.finalPrice}</span> },
-            { header: t("quotes:lead_time"), cell: (quote) => <span>{localize(quote.leadTime, i18n.language)}</span> },
-            { header: localize({ en: "Validity", ar: "الصلاحية" }, i18n.language), cell: (quote) => <StatusBadge tone="warning">{localize(quote.validity, i18n.language)}</StatusBadge> }
+            {
+              header: "RFQ",
+              cell: (rfq) => (
+                <Link to={`/client/quotes/${rfq._id}`} className="font-semibold text-primary hover:underline">
+                  {rfq._id.slice(-6).toUpperCase()}
+                </Link>
+              )
+            },
+            { header: localize({ en: "Released quotes", ar: "عروض مصدرة" }, language), cell: (rfq) => <span className="font-semibold">{rfq.releasedQuoteCount}</span> },
+            { header: localize({ en: "Lowest total", ar: "أقل إجمالي" }, language), cell: (rfq) => <span>{formatCurrency(rfq.lowestClientTotal, language)}</span> },
+            {
+              header: localize({ en: "Required by", ar: "مطلوب بحلول" }, language),
+              cell: (rfq) => (
+                <span className="inline-flex items-center gap-2 text-muted-foreground">
+                  <CalendarDays className="size-4" aria-hidden="true" />
+                  {rfq.requiredDeliveryDate ?? localize({ en: "Not specified", ar: "غير محدد" }, language)}
+                </span>
+              )
+            },
+            {
+              header: localize({ en: "Status", ar: "الحالة" }, language),
+              cell: (rfq) => (
+                <StatusBadge tone={rfq.status === "selected" || rfq.status === "poGenerated" ? "info" : "warning"}>
+                  {rfq.status === "selected" ? localize({ en: "Selected", ar: "تم الاختيار" }, language) : rfq.status === "poGenerated" ? localize({ en: "PO generated", ar: "تم إصدار أمر الشراء" }, language) : localize({ en: "Pending decision", ar: "بانتظار القرار" }, language)}
+                </StatusBadge>
+              )
+            },
+            {
+              header: localize({ en: "Released", ar: "تاريخ الإصدار" }, language),
+              cell: (rfq) => <span className="text-muted-foreground">{formatDate(rfq.updatedAt, language)}</span>
+            },
+            {
+              header: localize({ en: "Action", ar: "الإجراء" }, language),
+              className: "text-end",
+              cell: (rfq) => (
+                <Link to={`/client/quotes/${rfq._id}`} className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline">
+                  <ScrollText className="size-4" aria-hidden="true" />
+                  {localize({ en: "Compare", ar: "مقارنة" }, language)}
+                </Link>
+              )
+            }
           ]}
         />
       </DashboardCard>

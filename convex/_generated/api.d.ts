@@ -18,6 +18,7 @@ import type * as http from "../http.js";
 import type * as notifications from "../notifications.js";
 import type * as orders from "../orders.js";
 import type * as orgs from "../orgs.js";
+import type * as purchaseOrders from "../purchaseOrders.js";
 import type * as quotes from "../quotes.js";
 import type * as rbac from "../rbac.js";
 import type * as rfqs from "../rfqs.js";
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   notifications: typeof notifications;
   orders: typeof orders;
   orgs: typeof orgs;
+  purchaseOrders: typeof purchaseOrders;
   quotes: typeof quotes;
   rbac: typeof rbac;
   rfqs: typeof rfqs;

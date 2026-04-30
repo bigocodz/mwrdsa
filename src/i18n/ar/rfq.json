@@ -11,8 +11,29 @@
     "item": "البند",
     "item_placeholder": "اكتب وصف البند المطلوب",
     "quantity": "الكمية",
+    "unit": "الوحدة",
+    "unit_placeholder": "وحدة",
     "delivery_date": "تاريخ التسليم المطلوب",
-    "save_draft": "حفظ كمسودة"
+    "notes": "ملاحظات",
+    "notes_placeholder": "سياق اختياري لمورد",
+    "is_non_catalog": "طلب خارج الكتالوج",
+    "save_draft": "حفظ كمسودة",
+    "submit": "إرسال إلى مورد",
+    "remove_item": "حذف",
+    "add_line": "إضافة بند"
+  },
+  "status": {
+    "draft": "مسودة",
+    "submitted": "تم الإرسال",
+    "matching": "مطابقة الموردين",
+    "assigned": "تم الإسناد",
+    "quoting": "قيد التسعير",
+    "adminReview": "مراجعة الإدارة",
+    "released": "تم الإصدار",
+    "selected": "تم الاختيار",
+    "poGenerated": "تم إصدار أمر الشراء",
+    "cancelled": "ملغي",
+    "expired": "منتهي"
   },
   "dashboard": {
     "active_rfqs": "طلبات تسعير نشطة",
