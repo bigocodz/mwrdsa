@@ -6,6 +6,7 @@ import { DashboardCard, DashboardToolbar, DataTable, SparkBars, StatStrip, Statu
 import { Badge } from "@/components/ui/badge";
 import { localize, type LocalizedText } from "@/features/rfq/data/client-workflow-data";
 import { useAdminNav } from "@/features/admin/hooks/use-admin-nav";
+import { OrganizationDirectoryPage } from "@/features/admin/pages/organization-directory-page";
 
 type OperationRow = {
   id: string;
@@ -15,30 +16,10 @@ type OperationRow = {
   owner: string;
 };
 
-type DirectoryRow = {
-  id: string;
-  name: LocalizedText;
-  status: LocalizedText;
-  volume: string;
-  risk: LocalizedText;
-};
-
 const operations: OperationRow[] = [
   { id: "RFQ-1042", client: "CLT-00473", supplierPool: "Facilities", stage: { en: "Pricing review", ar: "مراجعة التسعير" }, owner: "Pricing" },
   { id: "RFQ-1038", client: "CLT-00921", supplierPool: "IT Supplies", stage: { en: "Supplier matching", ar: "مطابقة الموردين" }, owner: "Ops" },
   { id: "RFQ-1031", client: "CLT-00118", supplierPool: "Office", stage: { en: "Ready to release", ar: "جاهز للإصدار" }, owner: "Admin" }
-];
-
-const clients: DirectoryRow[] = [
-  { id: "CLT-00473", name: { en: "Healthcare procurement group", ar: "مجموعة مشتريات صحية" }, status: { en: "Active", ar: "نشط" }, volume: "SAR 420K", risk: { en: "Low", ar: "منخفض" } },
-  { id: "CLT-00921", name: { en: "Education services group", ar: "مجموعة خدمات تعليمية" }, status: { en: "Active", ar: "نشط" }, volume: "SAR 310K", risk: { en: "Medium", ar: "متوسط" } },
-  { id: "CLT-00118", name: { en: "Facilities operator", ar: "مشغل مرافق" }, status: { en: "Review", ar: "مراجعة" }, volume: "SAR 180K", risk: { en: "Medium", ar: "متوسط" } }
-];
-
-const suppliers: DirectoryRow[] = [
-  { id: "SUP-00821", name: { en: "Facilities supplier", ar: "مورد مرافق" }, status: { en: "Verified", ar: "موثق" }, volume: "92%", risk: { en: "Low", ar: "منخفض" } },
-  { id: "SUP-00419", name: { en: "IT accessories supplier", ar: "مورد ملحقات تقنية" }, status: { en: "Verified", ar: "موثق" }, volume: "88%", risk: { en: "Low", ar: "منخفض" } },
-  { id: "SUP-00277", name: { en: "Office supplies supplier", ar: "مورد مستلزمات مكتبية" }, status: { en: "Needs review", ar: "يحتاج مراجعة" }, volume: "76%", risk: { en: "Medium", ar: "متوسط" } }
 ];
 
 function AdminFrame({
@@ -107,17 +88,7 @@ export function AdminClientsPage() {
       title={t("navigation.clients")}
       description={localize({ en: "Buyer organizations, controls, and procurement activity", ar: "جهات الشراء والضوابط ونشاط المشتريات" }, i18n.language)}
     >
-      <DirectoryPage
-        rows={clients}
-        title={t("navigation.clients")}
-        search={localize({ en: "Search clients...", ar: "ابحث في العملاء..." }, i18n.language)}
-        metricLabels={[
-          localize({ en: "Active clients", ar: "عملاء نشطون" }, i18n.language),
-          localize({ en: "Pending approvals", ar: "موافقات معلقة" }, i18n.language),
-          localize({ en: "Monthly volume", ar: "حجم شهري" }, i18n.language),
-          localize({ en: "Risk reviews", ar: "مراجعات مخاطر" }, i18n.language)
-        ]}
-      />
+      <OrganizationDirectoryPage organizationType="client" title={t("navigation.clients")} />
     </AdminFrame>
   );
 }
@@ -130,17 +101,7 @@ export function AdminSuppliersPage() {
       title={t("navigation.suppliers")}
       description={localize({ en: "Supplier verification, performance, and category coverage", ar: "توثيق الموردين والأداء وتغطية الفئات" }, i18n.language)}
     >
-      <DirectoryPage
-        rows={suppliers}
-        title={t("navigation.suppliers")}
-        search={localize({ en: "Search suppliers...", ar: "ابحث في الموردين..." }, i18n.language)}
-        metricLabels={[
-          localize({ en: "Verified suppliers", ar: "موردون موثقون" }, i18n.language),
-          localize({ en: "Coverage gaps", ar: "فجوات تغطية" }, i18n.language),
-          localize({ en: "Response score", ar: "درجة الاستجابة" }, i18n.language),
-          localize({ en: "Needs review", ar: "يحتاج مراجعة" }, i18n.language)
-        ]}
-      />
+      <OrganizationDirectoryPage organizationType="supplier" title={t("navigation.suppliers")} />
     </AdminFrame>
   );
 }
@@ -217,36 +178,5 @@ export function AdminAuditPage() {
         />
       </DashboardCard>
     </AdminFrame>
-  );
-}
-
-function DirectoryPage({ rows, title, search, metricLabels }: { rows: DirectoryRow[]; title: string; search: string; metricLabels: string[] }) {
-  const { i18n } = useTranslation("common");
-
-  return (
-    <>
-      <StatStrip
-        stats={[
-          { label: metricLabels[0], value: "128", detail: localize({ en: "Current workspace", ar: "المساحة الحالية" }, i18n.language), trend: "+9", trendTone: "positive" },
-          { label: metricLabels[1], value: "7", detail: localize({ en: "Needs admin action", ar: "تحتاج إجراء إداري" }, i18n.language), trend: "-2", trendTone: "negative" },
-          { label: metricLabels[2], value: "SAR 1.2M", detail: localize({ en: "Current month", ar: "الشهر الحالي" }, i18n.language), trend: "+11%", trendTone: "positive" },
-          { label: metricLabels[3], value: "3", detail: localize({ en: "Open checks", ar: "فحوصات مفتوحة" }, i18n.language), trend: "-1", trendTone: "positive" }
-        ]}
-      />
-      <DashboardToolbar searchPlaceholder={search} />
-      <DashboardCard title={title}>
-        <DataTable
-          rows={rows}
-          getRowKey={(row) => row.id}
-          columns={[
-            { header: "ID", cell: (row) => <span className="font-semibold">{row.id}</span> },
-            { header: localize({ en: "Name", ar: "الاسم" }, i18n.language), cell: (row) => <span>{localize(row.name, i18n.language)}</span> },
-            { header: localize({ en: "Status", ar: "الحالة" }, i18n.language), cell: (row) => <StatusBadge tone="info">{localize(row.status, i18n.language)}</StatusBadge> },
-            { header: localize({ en: "Volume", ar: "الحجم" }, i18n.language), cell: (row) => <span className="font-semibold">{row.volume}</span> },
-            { header: localize({ en: "Risk", ar: "المخاطر" }, i18n.language), cell: (row) => <Badge variant="outline">{localize(row.risk, i18n.language)}</Badge> }
-          ]}
-        />
-      </DashboardCard>
-    </>
   );
 }

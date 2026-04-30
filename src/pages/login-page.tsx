@@ -2,7 +2,7 @@ import { LockKeyhole } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { BrandLogo } from "@/components/brand-logo";
@@ -28,6 +28,7 @@ const portalStartPaths: Record<PortalType, string> = {
 
 export function LoginPage() {
   const { t } = useTranslation("auth");
+  const location = useLocation();
   const navigate = useNavigate();
   const { isAuthenticated, isLoading, user } = useAuth();
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -50,19 +51,23 @@ export function LoginPage() {
       password: ""
     }
   });
+  const redirectPath = useMemo(() => {
+    const requestedPath = new URLSearchParams(location.search).get("redirect");
+    return requestedPath?.startsWith("/") && !requestedPath.startsWith("//") ? requestedPath : "/admin/dashboard";
+  }, [location.search]);
 
   useEffect(() => {
     if (isBetterAuthConfigured && !isLoading && isAuthenticated && user) {
-      navigate(portalStartPaths[user.portal], { replace: true });
+      navigate(redirectPath === "/admin/dashboard" ? portalStartPaths[user.portal] : redirectPath, { replace: true });
     }
-  }, [isAuthenticated, isLoading, navigate, user]);
+  }, [isAuthenticated, isLoading, navigate, redirectPath, user]);
 
   const handleLogin = handleSubmit(async (values) => {
     setSubmitError(null);
 
     if (!isBetterAuthConfigured) {
       trackEvent(analyticsEvents.loginSuccess, { mode: "demo" });
-      navigate("/admin/dashboard", { replace: true });
+      navigate(redirectPath, { replace: true });
       return;
     }
 

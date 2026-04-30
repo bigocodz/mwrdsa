@@ -1,24 +1,31 @@
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
-import { convex } from "@convex-dev/better-auth/plugins";
+import { convex, crossDomain } from "@convex-dev/better-auth/plugins";
 import { betterAuth } from "better-auth/minimal";
-import type { GenericDataModel } from "convex/server";
 import { components } from "./_generated/api";
+import type { DataModel } from "./_generated/dataModel";
 import { query } from "./_generated/server";
 import authConfig from "./auth.config";
 
 const authBasePath = "/api/auth";
-type BetterAuthComponentApi = Parameters<typeof createClient<GenericDataModel>>[0];
+const trustedOrigins = [
+  process.env.SITE_URL,
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5174",
+  "http://localhost:5175",
+  "http://127.0.0.1:5175"
+].filter((origin): origin is string => Boolean(origin));
+const siteUrl = process.env.SITE_URL ?? "http://localhost:5173";
 
-// The local checkout is not linked to Convex yet, so _generated/api.ts uses the generic component reference.
-const betterAuthComponent = components.betterAuth as unknown as BetterAuthComponentApi;
-export const authComponent = createClient<GenericDataModel>(betterAuthComponent);
+export const authComponent = createClient<DataModel>(components.betterAuth);
 
-export const createAuth = (ctx: GenericCtx<GenericDataModel>) =>
+export const createAuth = (ctx: GenericCtx<DataModel>) =>
   betterAuth({
     basePath: authBasePath,
     baseURL: process.env.CONVEX_SITE_URL ?? process.env.BETTER_AUTH_URL,
     secret: process.env.BETTER_AUTH_SECRET,
-    trustedOrigins: [process.env.SITE_URL ?? "http://localhost:5173"],
+    trustedOrigins,
     database: authComponent.adapter(ctx),
     emailAndPassword: {
       enabled: true,
@@ -29,9 +36,9 @@ export const createAuth = (ctx: GenericCtx<GenericDataModel>) =>
       storage: "database"
     },
     plugins: [
+      crossDomain({ siteUrl }),
       convex({
         authConfig,
-        jwks: process.env.JWKS,
         options: { basePath: authBasePath }
       })
     ]

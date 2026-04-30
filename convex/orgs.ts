@@ -52,11 +52,21 @@ export const createOrganization = mutation({
 
 export const listOrganizationsForAdmin = query({
   args: {
-    actorUserId: v.id("users")
+    actorUserId: v.id("users"),
+    type: v.optional(v.union(v.literal("client"), v.literal("supplier"), v.literal("admin")))
   },
   handler: async (ctx, args) => {
     const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
     assertHasPermission(actor, "organization:update");
+
+    const organizationType = args.type;
+    if (organizationType) {
+      return await ctx.db
+        .query("organizations")
+        .withIndex("by_type", (q) => q.eq("type", organizationType))
+        .order("desc")
+        .collect();
+    }
 
     return await ctx.db.query("organizations").order("desc").collect();
   }

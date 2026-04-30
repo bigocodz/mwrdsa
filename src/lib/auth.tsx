@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import { useQuery } from "convex/react";
+import { useConvexAuth, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { authClient, isBetterAuthConfigured } from "@/lib/auth-client";
 import type { PortalRole, PortalType } from "@/types/auth";
@@ -41,9 +41,10 @@ type AuthProviderProps = {
 };
 
 export function AuthProvider({ children }: AuthProviderProps) {
+  const convexAuth = useConvexAuth();
   const sessionUser = useQuery(api.auth.getCurrentSession, isBetterAuthConfigured ? {} : "skip") as SessionUser | null | undefined;
   const user = isBetterAuthConfigured ? (sessionUser ?? null) : demoUser;
-  const isLoading = isBetterAuthConfigured && sessionUser === undefined;
+  const isLoading = isBetterAuthConfigured && (convexAuth.isLoading || (convexAuth.isAuthenticated && sessionUser === undefined));
 
   const value = useMemo<AuthContextValue>(
     () => ({

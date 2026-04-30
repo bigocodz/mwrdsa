@@ -1,5 +1,5 @@
 import { Search } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ChangeEventHandler, ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -69,15 +69,19 @@ export function DashboardCard({
 }
 
 export function DashboardToolbar({
-  searchPlaceholder
+  onSearchChange,
+  searchPlaceholder,
+  searchValue
 }: {
+  onSearchChange?: ChangeEventHandler<HTMLInputElement>;
   searchPlaceholder: string;
+  searchValue?: string;
 }) {
   return (
     <section>
       <label className="flex min-w-0 items-center gap-2 rounded-lg border border-input bg-card px-3 shadow-card">
         <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <Input className="border-0 bg-transparent px-0 shadow-none focus-visible:ring-0" placeholder={searchPlaceholder} />
+        <Input className="border-0 bg-transparent px-0 shadow-none focus-visible:ring-0" placeholder={searchPlaceholder} value={searchValue} onChange={onSearchChange} />
       </label>
     </section>
   );
@@ -136,10 +140,12 @@ export type DataColumn<T> = {
 
 export function DataTable<T>({
   columns,
+  emptyLabel,
   rows,
   getRowKey
 }: {
   columns: DataColumn<T>[];
+  emptyLabel?: string;
   rows: T[];
   getRowKey: (row: T) => string;
 }) {
@@ -157,15 +163,23 @@ export function DataTable<T>({
             </tr>
           </thead>
           <tbody className="divide-y divide-border/70">
-            {rows.map((row) => (
-              <tr key={getRowKey(row)} className="transition-colors hover:bg-accent/55">
-                {columns.map((column) => (
-                  <td key={column.header} className={cn("px-4 py-4 align-middle", column.className)}>
-                    {column.cell(row)}
-                  </td>
-                ))}
+            {rows.length > 0 ? (
+              rows.map((row) => (
+                <tr key={getRowKey(row)} className="transition-colors hover:bg-accent/55">
+                  {columns.map((column) => (
+                    <td key={column.header} className={cn("px-4 py-4 align-middle", column.className)}>
+                      {column.cell(row)}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td className="px-4 py-8 text-center text-muted-foreground" colSpan={columns.length}>
+                  {emptyLabel}
+                </td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>
