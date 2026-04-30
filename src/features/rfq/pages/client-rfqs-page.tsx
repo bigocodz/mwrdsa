@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "convex/react";
 import { CalendarDays, Copy, FileSpreadsheet, Loader2, Plus, Send, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useFieldArray, useForm } from "react-hook-form";
+import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { z } from "zod";
@@ -95,7 +95,6 @@ export function ClientRfqsPage() {
   const [searchValue, setSearchValue] = useState("");
   const [submitMessage, setSubmitMessage] = useState<SubmitMessage | null>(null);
   const [pendingSubmitId, setPendingSubmitId] = useState<Id<"rfqs"> | null>(null);
-  const cartConsumedRef = useRef(false);
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const [csvMessage, setCsvMessage] = useState<{ tone: "success" | "error"; text: string; errors?: CsvParseError[] } | null>(null);
 
@@ -105,7 +104,6 @@ export function ClientRfqsPage() {
     handleSubmit,
     register,
     reset,
-    watch
   } = useForm<RfqFormValues>({
     resolver: zodResolver(rfqFormSchema),
     defaultValues: {
@@ -117,13 +115,12 @@ export function ClientRfqsPage() {
   });
 
   const { append, fields, remove } = useFieldArray({ control, name: "lineItems" });
-  const isNonCatalog = watch("isNonCatalog");
+  const isNonCatalog = useWatch({ control, name: "isNonCatalog" });
 
   useEffect(() => {
-    if (cartConsumedRef.current || cart.items.length === 0) {
+    if (cart.items.length === 0) {
       return;
     }
-    cartConsumedRef.current = true;
     const allCustom = cart.items.every((item) => !item.productId);
     reset({
       isNonCatalog: allCustom,
@@ -190,7 +187,6 @@ export function ClientRfqsPage() {
       }
 
       cart.clear();
-      cartConsumedRef.current = true;
       reset({
         isNonCatalog: values.isNonCatalog,
         requiredDeliveryDate: "",
@@ -236,7 +232,6 @@ export function ClientRfqsPage() {
           unit: row.unit
         }))
       );
-      cartConsumedRef.current = false;
       setCsvMessage({
         tone: "success",
         text: localize(
@@ -416,7 +411,6 @@ export function ClientRfqsPage() {
                             unit: item.unit
                           }))
                         );
-                        cartConsumedRef.current = false;
                       }}
                     >
                       <Copy className="size-4" aria-hidden="true" />

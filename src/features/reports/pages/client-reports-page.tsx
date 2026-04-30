@@ -11,6 +11,7 @@ import { localize } from "@/features/rfq/data/client-workflow-data";
 import { useClientNav } from "@/features/rfq/hooks/use-client-nav";
 import { useAuth } from "@/lib/auth";
 import { isBetterAuthConfigured } from "@/lib/auth-client";
+import { hasPermission } from "@/lib/permissions";
 
 function localizePair(ar: string | undefined | null, en: string | undefined | null, language: string) {
   return language === "ar" ? ar || en || "" : en || ar || "";
@@ -57,7 +58,8 @@ export function ClientReportsPage() {
   const language = i18n.language;
   const navItems = useClientNav();
   const { user } = useAuth();
-  const queryArgs = isBetterAuthConfigured && user ? { actorUserId: user.id as Id<"users"> } : "skip";
+  const canViewReports = Boolean(user && hasPermission(user.roles, "analytics:view"));
+  const queryArgs = isBetterAuthConfigured && user && canViewReports ? { actorUserId: user.id as Id<"users"> } : "skip";
   const summary = useQuery(api.analytics.getClientReportSummary, queryArgs);
 
   const monthlyValues = useMemo(() => (summary?.monthlySeries ?? []).map((row) => row.amount), [summary]);
@@ -88,7 +90,11 @@ export function ClientReportsPage() {
       primaryActionIcon={<Download className="size-4" aria-hidden="true" />}
       onPrimaryAction={handleExportSpend}
     >
-      {summary === undefined ? (
+      {!canViewReports ? (
+        <DashboardCard title={localize({ en: "Reports restricted", ar: "التقارير مقيدة" }, language)}>
+          <p className="text-sm text-muted-foreground">{localize({ en: "Your role does not include analytics access.", ar: "دورك لا يتضمن صلاحية الوصول للتحليلات." }, language)}</p>
+        </DashboardCard>
+      ) : summary === undefined ? (
         <DashboardCard title={localize({ en: "Loading...", ar: "جار التحميل..." }, language)}>
           <p className="text-sm text-muted-foreground">{localize({ en: "Loading reports...", ar: "جار تحميل التقارير..." }, language)}</p>
         </DashboardCard>

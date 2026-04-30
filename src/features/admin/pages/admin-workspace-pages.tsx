@@ -81,6 +81,7 @@ export function AdminOperationsPage() {
   const [deadlineSelections, setDeadlineSelections] = useState<Record<string, string>>({});
   const [pendingAssignId, setPendingAssignId] = useState<Id<"rfqs"> | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+  const [reportNow] = useState(() => Date.now());
 
   const rows = useMemo(() => {
     const source = operations ?? [];
@@ -97,9 +98,9 @@ export function AdminOperationsPage() {
       active: source.length,
       pendingReview: source.filter((rfq) => rfq.status === "adminReview").length,
       slaBreached: source.filter((rfq) => rfq.slaBreached).length,
-      releasedToday: source.filter((rfq) => rfq.status === "released" && Date.now() - rfq.updatedAt < 86_400_000).length
+      releasedToday: source.filter((rfq) => rfq.status === "released" && reportNow - rfq.updatedAt < 86_400_000).length
     };
-  }, [operations]);
+  }, [operations, reportNow]);
 
   const expandedAssignments = useQuery(
     api.rfqs.listAssignmentsForRfq,
@@ -345,6 +346,7 @@ export function AdminAuditPage() {
   const events = useQuery(api.audit.listAuditEventsForActor, queryArgs);
   const [searchValue, setSearchValue] = useState("");
   const [entityFilter, setEntityFilter] = useState("");
+  const [reportNow] = useState(() => Date.now());
 
   const filteredEvents = useMemo(() => {
     const source = events ?? [];
@@ -361,14 +363,13 @@ export function AdminAuditPage() {
   const totals = useMemo(() => {
     const source = events ?? [];
     const dayMs = 24 * 60 * 60 * 1000;
-    const now = Date.now();
     return {
       total: source.length,
-      today: source.filter((entry) => now - entry.createdAt < dayMs).length,
+      today: source.filter((entry) => reportNow - entry.createdAt < dayMs).length,
       overrides: source.filter((entry) => entry.action.includes("approved_for_release") || entry.action.includes("override")).length,
       releases: source.filter((entry) => entry.action === "rfq.quotes_released").length
     };
-  }, [events]);
+  }, [events, reportNow]);
 
   const entityTypes = useMemo(() => {
     const source = events ?? [];

@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AdminDashboardPage } from "@/features/admin/pages/admin-dashboard-page";
+import { AdminReportsPage } from "@/features/admin/pages/admin-reports-page";
 import { AdminRfqPricingPage } from "@/features/admin/pages/admin-rfq-pricing-page";
 import { AdminAuditPage, AdminCatalogPage, AdminClientsPage, AdminOperationsPage, AdminSuppliersPage } from "@/features/admin/pages/admin-workspace-pages";
 import { ClientCatalogPage } from "@/features/catalog/pages/client-catalog-page";
@@ -77,6 +78,7 @@ export const router = createBrowserRouter([
       { path: "clients", element: <AdminClientsPage /> },
       { path: "suppliers", element: <AdminSuppliersPage /> },
       { path: "catalog", element: <AdminCatalogPage /> },
+      { path: "reports", element: <AdminReportsPage /> },
       { path: "audit", element: <AdminAuditPage /> }
     ]
   },

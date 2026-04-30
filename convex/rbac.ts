@@ -30,7 +30,8 @@ type Permission =
   | "quote:release"
   | "order:update_status"
   | "delivery:confirm"
-  | "audit:view";
+  | "audit:view"
+  | "analytics:view";
 
 type UserLike = {
   roles: Role[];
@@ -39,19 +40,19 @@ type UserLike = {
 };
 
 const rolePermissionMatrix = {
-  superAdmin: ["organization:create", "organization:update", "user:invite", "catalog:manage", "rfq:create", "rfq:submit", "rfq:operations", "po:approve", "quote:submit", "quote:apply_margin", "quote:release", "order:update_status", "delivery:confirm", "audit:view"],
-  operationsManager: ["organization:update", "rfq:submit", "rfq:operations", "audit:view"],
-  pricingAnalyst: ["quote:apply_margin", "quote:release", "rfq:operations", "audit:view"],
+  superAdmin: ["organization:create", "organization:update", "user:invite", "catalog:manage", "rfq:create", "rfq:submit", "rfq:operations", "po:approve", "quote:submit", "quote:apply_margin", "quote:release", "order:update_status", "delivery:confirm", "audit:view", "analytics:view"],
+  operationsManager: ["organization:update", "rfq:submit", "rfq:operations", "audit:view", "analytics:view"],
+  pricingAnalyst: ["quote:apply_margin", "quote:release", "rfq:operations", "audit:view", "analytics:view"],
   accountManager: ["organization:create", "organization:update", "user:invite", "rfq:operations", "audit:view"],
   catalogManager: ["catalog:manage", "audit:view"],
-  reportingAnalyst: ["audit:view"],
-  orgAdmin: ["user:invite", "rfq:create", "rfq:submit", "po:approve", "delivery:confirm"],
-  procurementManager: ["rfq:create", "rfq:submit", "po:approve", "delivery:confirm"],
+  reportingAnalyst: ["audit:view", "analytics:view"],
+  orgAdmin: ["user:invite", "rfq:create", "rfq:submit", "po:approve", "delivery:confirm", "analytics:view"],
+  procurementManager: ["rfq:create", "rfq:submit", "po:approve", "delivery:confirm", "analytics:view"],
   procurementOfficer: ["rfq:create", "rfq:submit"],
   requester: ["rfq:create", "rfq:submit"],
-  financeApprover: ["po:approve", "delivery:confirm"],
+  financeApprover: ["po:approve", "delivery:confirm", "analytics:view"],
   departmentHead: ["po:approve", "delivery:confirm"],
-  supplierAdmin: ["user:invite", "quote:submit", "order:update_status"],
+  supplierAdmin: ["user:invite", "quote:submit", "order:update_status", "analytics:view"],
   quotationOfficer: ["quote:submit"],
   operationsOfficer: ["order:update_status"],
   viewer: []

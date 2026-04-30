@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "convex/react";
 import { ArrowLeft, Loader2, PauseCircle, Send, ShieldCheck, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../../convex/_generated/api";
@@ -69,23 +69,14 @@ export function AdminRfqPricingPage() {
   const [isReleasing, setIsReleasing] = useState(false);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
 
-  useEffect(() => {
-    if (!aggregation) return;
-    const next: Record<string, string> = {};
-    for (const quote of aggregation.quotes) {
-      next[quote._id] = String(quote.currentMarginPercent || 0);
-    }
-    setMarginInputs((current) => ({ ...next, ...current }));
-  }, [aggregation]);
-
   const approvedCount = useMemo(() => (aggregation?.quotes ?? []).filter((quote) => quote.status === "approvedForRelease").length, [aggregation]);
 
-  async function handleDecision(quoteId: Id<"supplierQuotes">, decision: "approvedForRelease" | "held" | "rejected") {
+  async function handleDecision(quoteId: Id<"supplierQuotes">, fallbackMarginPercent: number, decision: "approvedForRelease" | "held" | "rejected") {
     if (!isBetterAuthConfigured || !user) return;
     setMessage(null);
     setPendingDecisionId(quoteId);
     try {
-      const margin = Number(marginInputs[quoteId]);
+      const margin = Number(marginInputs[quoteId] ?? fallbackMarginPercent);
       const reason = reasonInputs[quoteId]?.trim();
       if (decision === "approvedForRelease") {
         if (!Number.isFinite(margin) || margin < 0) {
@@ -240,7 +231,7 @@ export function AdminRfqPricingPage() {
             ) : (
               <div className="flex flex-col gap-4">
                 {aggregation.quotes.map((quote) => {
-                  const margin = Number(marginInputs[quote._id] ?? 0);
+                  const margin = Number(marginInputs[quote._id] ?? quote.currentMarginPercent);
                   const projectedClientTotal = Number.isFinite(margin) ? quote.supplierTotal * (1 + margin / 100) : quote.supplierTotal;
                   const isPending = pendingDecisionId === quote._id;
                   const isFinalized = quote.status === "released" || quote.status === "selected";
@@ -288,7 +279,7 @@ export function AdminRfqPricingPage() {
                               type="number"
                               min="0"
                               step="0.1"
-                              value={marginInputs[quote._id] ?? ""}
+                              value={marginInputs[quote._id] ?? String(quote.currentMarginPercent || 0)}
                               onChange={(event) => setMarginInputs((current) => ({ ...current, [quote._id]: event.target.value }))}
                               disabled={isPending}
                             />
@@ -302,19 +293,19 @@ export function AdminRfqPricingPage() {
                             />
                           </label>
                           <div className="flex items-end">
-                            <Button type="button" disabled={isPending} onClick={() => void handleDecision(quote._id, "approvedForRelease")}>
+                            <Button type="button" disabled={isPending} onClick={() => void handleDecision(quote._id, quote.currentMarginPercent, "approvedForRelease")}>
                               {isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <ShieldCheck className="size-4" aria-hidden="true" />}
                               {localize({ en: "Approve", ar: "اعتماد" }, language)}
                             </Button>
                           </div>
                           <div className="flex items-end">
-                            <Button type="button" variant="outline" disabled={isPending} onClick={() => void handleDecision(quote._id, "held")}>
+                            <Button type="button" variant="outline" disabled={isPending} onClick={() => void handleDecision(quote._id, quote.currentMarginPercent, "held")}>
                               <PauseCircle className="size-4" aria-hidden="true" />
                               {localize({ en: "Hold", ar: "تعليق" }, language)}
                             </Button>
                           </div>
                           <div className="flex items-end">
-                            <Button type="button" variant="ghost" disabled={isPending} onClick={() => void handleDecision(quote._id, "rejected")}>
+                            <Button type="button" variant="ghost" disabled={isPending} onClick={() => void handleDecision(quote._id, quote.currentMarginPercent, "rejected")}>
                               <X className="size-4" aria-hidden="true" />
                               {localize({ en: "Reject", ar: "رفض" }, language)}
                             </Button>

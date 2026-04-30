@@ -93,11 +93,12 @@ export function SparkBars({ values, tone = "primary" }: { values: number[]; tone
     cyan: "bg-mwrd-frosted",
     sun: "bg-mwrd-sun"
   }[tone];
+  const maxValue = Math.max(...values.filter((value) => Number.isFinite(value) && value > 0), 1);
 
   return (
     <div className="flex h-28 items-end gap-2 border-y border-border/70 py-3">
       {values.map((value, index) => (
-        <span key={`${value}-${index}`} className={cn("w-full rounded-t-md", toneClass)} style={{ height: `${Math.max(value, 12)}%` }} />
+        <span key={`${value}-${index}`} className={cn("w-full rounded-t-md", toneClass)} style={{ height: `${Math.max((value / maxValue) * 100, 12)}%` }} />
       ))}
     </div>
   );

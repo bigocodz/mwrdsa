@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "convex/react";
 import { ArrowLeft, FileCheck2, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
 import { z } from "zod";
@@ -67,11 +67,11 @@ export function SupplierAssignmentDetailPage() {
   const [submitMessage, setSubmitMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
 
   const {
+    control,
     formState: { errors, isSubmitting },
     handleSubmit,
     register,
     reset,
-    watch
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -94,7 +94,7 @@ export function SupplierAssignmentDetailPage() {
     });
   }, [detail, reset]);
 
-  const watchedLines = watch("lines");
+  const watchedLines = useWatch({ control, name: "lines" });
 
   const totals = useMemo(() => {
     if (!detail || !watchedLines) {

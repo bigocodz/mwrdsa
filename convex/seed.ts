@@ -121,19 +121,24 @@ export const seedDevelopmentData = action({
 
       const auth = createAuth(ctx);
       const authCtx = await auth.$context;
-      const existing = await authCtx.internalAdapter.findUserByEmail(account.email);
+      const existing = await authCtx.internalAdapter.findUserByEmail(account.email, { includeAccounts: true });
 
-      if (!existing) {
-        const newUser = await authCtx.internalAdapter.createUser({
+      const authUser =
+        existing?.user ??
+        (await authCtx.internalAdapter.createUser({
           email: account.email,
           name: account.name,
           emailVerified: true
-        });
-        const hashed = await authCtx.password.hash(DEMO_PASSWORD);
+        }));
+      const hashed = await authCtx.password.hash(DEMO_PASSWORD);
+      const credentialAccount = existing?.accounts?.find((entry) => entry.providerId === "credential");
+      if (credentialAccount?.id) {
+        await authCtx.internalAdapter.updateAccount(credentialAccount.id, { password: hashed });
+      } else {
         await authCtx.internalAdapter.linkAccount({
-          userId: newUser.id,
+          userId: authUser.id,
           providerId: "credential",
-          accountId: newUser.id,
+          accountId: authUser.id,
           password: hashed
         });
       }
