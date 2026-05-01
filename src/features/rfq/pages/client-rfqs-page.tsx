@@ -32,6 +32,9 @@ const rfqFormSchema = z
   .object({
     isNonCatalog: z.boolean(),
     requiredDeliveryDate: z.string().optional(),
+    department: z.string().trim().max(120).optional(),
+    branch: z.string().trim().max(120).optional(),
+    costCenter: z.string().trim().max(120).optional(),
     notes: z.string().trim().max(500).optional(),
     lineItems: z.array(lineItemSchema).min(1)
   })
@@ -109,6 +112,9 @@ export function ClientRfqsPage() {
     defaultValues: {
       isNonCatalog: false,
       requiredDeliveryDate: "",
+      department: "",
+      branch: "",
+      costCenter: "",
       notes: "",
       lineItems: [emptyLineItem()]
     }
@@ -125,6 +131,9 @@ export function ClientRfqsPage() {
     reset({
       isNonCatalog: allCustom,
       requiredDeliveryDate: "",
+      department: "",
+      branch: "",
+      costCenter: "",
       notes: "",
       lineItems: cart.items.map((item) => ({
         productId: item.productId ?? "",
@@ -142,7 +151,11 @@ export function ClientRfqsPage() {
     if (!normalizedSearch) {
       return source;
     }
-    return source.filter((rfq) => [rfq._id, rfq.status, rfq.notes ?? ""].some((value) => value?.toString().toLowerCase().includes(normalizedSearch)));
+    return source.filter((rfq) =>
+      [rfq._id, rfq.status, rfq.department ?? "", rfq.branch ?? "", rfq.costCenter ?? "", rfq.notes ?? ""].some((value) =>
+        value?.toString().toLowerCase().includes(normalizedSearch)
+      )
+    );
   }, [rfqs, normalizedSearch]);
 
   const totalRfqs = rfqs?.length ?? 0;
@@ -169,6 +182,9 @@ export function ClientRfqsPage() {
         actorUserId: user.id as Id<"users">,
         isNonCatalog: values.isNonCatalog,
         requiredDeliveryDate: values.requiredDeliveryDate || undefined,
+        department: values.department || undefined,
+        branch: values.branch || undefined,
+        costCenter: values.costCenter || undefined,
         notes: values.notes || undefined,
         lineItems: values.lineItems.map((item) => ({
           productId: item.productId ? (item.productId as Id<"products">) : undefined,
@@ -190,6 +206,9 @@ export function ClientRfqsPage() {
       reset({
         isNonCatalog: values.isNonCatalog,
         requiredDeliveryDate: "",
+        department: "",
+        branch: "",
+        costCenter: "",
         notes: "",
         lineItems: [emptyLineItem()]
       });
@@ -370,6 +389,10 @@ export function ClientRfqsPage() {
               },
               { header: localize({ en: "Items", ar: "البنود" }, language), cell: (rfq) => <span className="text-muted-foreground">{`${rfq.lineItemCount} × ${rfq.totalQuantity}`}</span> },
               {
+                header: localize({ en: "Department", ar: "القسم" }, language),
+                cell: (rfq) => <span className="text-muted-foreground">{rfq.department ?? localize({ en: "Not specified", ar: "غير محدد" }, language)}</span>
+              },
+              {
                 header: localize({ en: "Status", ar: "الحالة" }, language),
                 cell: (rfq) => <StatusBadge tone={rfq.status === "draft" ? "neutral" : rfq.status === "expired" || rfq.status === "cancelled" ? "danger" : "info"}>{t(`rfq:status.${rfq.status}` as const)}</StatusBadge>
               },
@@ -505,6 +528,20 @@ export function ClientRfqsPage() {
               {t("rfq:form.delivery_date")}
               <Input type="date" {...register("requiredDeliveryDate")} />
             </label>
+            <div className="grid gap-3 md:grid-cols-3">
+              <label className="flex flex-col gap-1.5 text-sm font-medium">
+                {localize({ en: "Department", ar: "القسم" }, language)}
+                <Input placeholder={localize({ en: "Facilities", ar: "المرافق" }, language)} {...register("department")} />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm font-medium">
+                {localize({ en: "Branch", ar: "الفرع" }, language)}
+                <Input placeholder={localize({ en: "Riyadh HQ", ar: "فرع الرياض" }, language)} {...register("branch")} />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm font-medium">
+                {localize({ en: "Cost center", ar: "مركز التكلفة" }, language)}
+                <Input placeholder={localize({ en: "CC-100", ar: "CC-100" }, language)} {...register("costCenter")} />
+              </label>
+            </div>
             <label className="flex flex-col gap-1.5 text-sm font-medium">
               {t("rfq:form.notes")}
               <textarea className={cn(textareaClassName)} placeholder={t("rfq:form.notes_placeholder")} {...register("notes")} />

@@ -1,6 +1,9 @@
 {
   "navigation": {
     "menu": "Open navigation",
+    "close": "Close navigation",
+    "collapse": "Collapse navigation",
+    "expand": "Expand navigation",
     "main": "Main",
     "logout": "Sign out",
     "dashboard": "Dashboard",

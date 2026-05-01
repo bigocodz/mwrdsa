@@ -37,6 +37,16 @@ function formatPercent(value: number) {
   return `${value.toFixed(1)}%`;
 }
 
+type DimensionBreakdownRow = {
+  name: string;
+  total: number;
+  purchaseOrderCount: number;
+};
+
+function formatDimensionName(name: string, language: string) {
+  return name === "Unassigned" ? localize({ en: "Unassigned", ar: "غير محدد" }, language) : name;
+}
+
 function downloadCsv(filename: string, rows: Array<Record<string, string | number>>) {
   if (rows.length === 0) return;
   const headers = Object.keys(rows[0]);
@@ -80,6 +90,26 @@ export function ClientReportsPage() {
       summary.categoryBreakdown.map((row) => ({ category_en: row.nameEn, category_ar: row.nameAr, amount: row.total.toFixed(2) }))
     );
   };
+
+  const handleExportDimension = (filename: string, label: string, rows: DimensionBreakdownRow[]) => {
+    downloadCsv(
+      `${filename}-${new Date().toISOString().slice(0, 10)}.csv`,
+      rows.map((row) => ({ [label]: row.name, amount: row.total.toFixed(2), purchase_orders: row.purchaseOrderCount }))
+    );
+  };
+
+  const renderDimensionTable = (rows: DimensionBreakdownRow[], emptyLabel: string) => (
+    <DataTable
+      rows={rows}
+      emptyLabel={emptyLabel}
+      getRowKey={(row) => row.name}
+      columns={[
+        { header: localize({ en: "Dimension", ar: "البعد" }, language), cell: (row) => <span className="font-semibold">{formatDimensionName(row.name, language)}</span> },
+        { header: localize({ en: "Spend", ar: "الإنفاق" }, language), cell: (row) => <span className="font-semibold">{formatCurrency(row.total, language)}</span> },
+        { header: localize({ en: "POs", ar: "أوامر" }, language), cell: (row) => <span>{row.purchaseOrderCount}</span> }
+      ]}
+    />
+  );
 
   return (
     <PortalShell
@@ -163,6 +193,44 @@ export function ClientReportsPage() {
               ]}
             />
           </DashboardCard>
+
+          <section className="grid gap-5 xl:grid-cols-3">
+            <DashboardCard
+              title={localize({ en: "Spend by department", ar: "الإنفاق حسب القسم" }, language)}
+              action={
+                <Button type="button" size="sm" variant="outline" disabled={summary.departmentBreakdown.length === 0} onClick={() => handleExportDimension("mwrd-spend-by-department", "department", summary.departmentBreakdown)}>
+                  <Download className="size-4" aria-hidden="true" />
+                  {localize({ en: "Export", ar: "تصدير" }, language)}
+                </Button>
+              }
+            >
+              {renderDimensionTable(summary.departmentBreakdown, localize({ en: "No department spend yet.", ar: "لا يوجد إنفاق حسب القسم بعد." }, language))}
+            </DashboardCard>
+
+            <DashboardCard
+              title={localize({ en: "Spend by branch", ar: "الإنفاق حسب الفرع" }, language)}
+              action={
+                <Button type="button" size="sm" variant="outline" disabled={summary.branchBreakdown.length === 0} onClick={() => handleExportDimension("mwrd-spend-by-branch", "branch", summary.branchBreakdown)}>
+                  <Download className="size-4" aria-hidden="true" />
+                  {localize({ en: "Export", ar: "تصدير" }, language)}
+                </Button>
+              }
+            >
+              {renderDimensionTable(summary.branchBreakdown, localize({ en: "No branch spend yet.", ar: "لا يوجد إنفاق حسب الفرع بعد." }, language))}
+            </DashboardCard>
+
+            <DashboardCard
+              title={localize({ en: "Spend by cost center", ar: "الإنفاق حسب مركز التكلفة" }, language)}
+              action={
+                <Button type="button" size="sm" variant="outline" disabled={summary.costCenterBreakdown.length === 0} onClick={() => handleExportDimension("mwrd-spend-by-cost-center", "cost_center", summary.costCenterBreakdown)}>
+                  <Download className="size-4" aria-hidden="true" />
+                  {localize({ en: "Export", ar: "تصدير" }, language)}
+                </Button>
+              }
+            >
+              {renderDimensionTable(summary.costCenterBreakdown, localize({ en: "No cost-center spend yet.", ar: "لا يوجد إنفاق حسب مركز التكلفة بعد." }, language))}
+            </DashboardCard>
+          </section>
 
           <DashboardCard title={localize({ en: "Monthly spend table", ar: "جدول الإنفاق الشهري" }, language)}>
             <DataTable

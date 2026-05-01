@@ -212,6 +212,18 @@ export function ClientRfqDetailPage() {
                   <span className="text-xs font-semibold uppercase text-muted-foreground">{localize({ en: "Required by", ar: "مطلوب بحلول" }, language)}</span>
                   <span className="text-sm">{detail.requiredDeliveryDate ?? localize({ en: "Not specified", ar: "غير محدد" }, language)}</span>
                 </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold uppercase text-muted-foreground">{localize({ en: "Department", ar: "القسم" }, language)}</span>
+                  <span className="text-sm">{detail.department ?? localize({ en: "Not specified", ar: "غير محدد" }, language)}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold uppercase text-muted-foreground">{localize({ en: "Branch", ar: "الفرع" }, language)}</span>
+                  <span className="text-sm">{detail.branch ?? localize({ en: "Not specified", ar: "غير محدد" }, language)}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold uppercase text-muted-foreground">{localize({ en: "Cost center", ar: "مركز التكلفة" }, language)}</span>
+                  <span className="text-sm">{detail.costCenter ?? localize({ en: "Not specified", ar: "غير محدد" }, language)}</span>
+                </div>
               </div>
 
               <div className="mt-5 flex flex-col gap-3 border-t border-border/70 pt-4">

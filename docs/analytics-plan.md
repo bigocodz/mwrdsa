@@ -6,8 +6,9 @@ Analytics must be sent through `src/lib/analytics.ts`. Components must not call 
 
 | Surface | Convex Query | Audience | Metrics |
 |---|---|---|---|
-| Client reports | `api.analytics.getClientReportSummary` | Client users with reporting access | Spend, RFQ-to-order conversion, time to quote, PO approval time, category spend |
-| Admin revenue and margin | `api.analytics.getAdminRevenueMarginSummary` | Admin users with `analytics:view` | Revenue, supplier cost, gross margin, margin rate, margin overrides, client and supplier breakdowns |
+| Client reports | `api.analytics.getClientReportSummary` | Client users with reporting access | Approved PO spend, RFQ-to-order conversion, time to quote, PO approval time, category spend, department/branch/cost-center spend |
+| Admin revenue and margin | `api.analytics.getAdminRevenueMarginSummary` | Admin users with `analytics:view` | Approved PO revenue, supplier cost, gross margin, margin rate, margin overrides, client and supplier breakdowns |
+| Supplier performance | `api.analytics.getSupplierPerformanceSummary` | Supplier users with `analytics:view` | Response rate, win rate, on-time delivery, fill rate, fulfillment rows |
 
 ## Required Events
 
@@ -31,7 +32,12 @@ Analytics must be sent through `src/lib/analytics.ts`. Components must not call 
 - Do not include filenames, attachment contents, contact details, phone numbers, or emails in event payloads.
 - Keep analytics payloads small and operational.
 
-## Step 14 Remaining Scope
+## Step 14 Status
 
-- Supplier on-time delivery and fill-rate reports should be backed by order status history and selected quote line-item fulfillment data.
-- Client department, branch, and cost-center breakdowns require those dimensions on RFQs, purchase orders, or client organization metadata before they can be reported accurately.
+- Phase 1 reporting is wired for client spend, admin revenue/margin, supplier performance, and client department/branch/cost-center breakdowns.
+
+## Metric Notes
+
+- Supplier on-time delivery uses the first `delivered`, `receiptConfirmed`, or `completed` order status event against the RFQ required delivery date.
+- Supplier fill rate currently uses selected quote line-item coverage against requested RFQ line quantities. Shipment-level fulfilled quantity should replace this when partial delivery tracking is added.
+- Client department, branch, and cost-center breakdowns use RFQ dimensions captured at request time. Older RFQs without dimensions are grouped as `Unassigned`.

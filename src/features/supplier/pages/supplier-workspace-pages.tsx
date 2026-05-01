@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "convex/react";
-import { Check, FileCheck2, Loader2, X } from "lucide-react";
+import { Check, Download, FileCheck2, Loader2, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
@@ -13,6 +13,7 @@ import { localize } from "@/features/rfq/data/client-workflow-data";
 import { useSupplierNav } from "@/features/supplier/hooks/use-supplier-nav";
 import { useAuth } from "@/lib/auth";
 import { isBetterAuthConfigured } from "@/lib/auth-client";
+import { hasPermission } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 
@@ -284,6 +285,26 @@ function formatCurrency(amount: number, language: string) {
   }).format(amount);
 }
 
+function formatPercent(value: number) {
+  return `${value.toFixed(1)}%`;
+}
+
+function downloadCsv(filename: string, rows: Array<Record<string, string | number>>) {
+  if (rows.length === 0) return;
+  const headers = Object.keys(rows[0]);
+  const escape = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
+  const csv = [headers.join(","), ...rows.map((row) => headers.map((header) => escape(row[header] ?? "")).join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 export function SupplierQuotesPage() {
   const { t, i18n } = useTranslation("common");
   const language = i18n.language;
@@ -446,39 +467,125 @@ export function SupplierOrdersPage() {
 
 export function SupplierPerformancePage() {
   const { t, i18n } = useTranslation("common");
+  const language = i18n.language;
+  const { user } = useAuth();
+  const canViewPerformance = Boolean(user && hasPermission(user.roles, "analytics:view"));
+  const queryArgs = isBetterAuthConfigured && user && canViewPerformance ? { actorUserId: user.id as Id<"users"> } : "skip";
+  const summary = useQuery(api.analytics.getSupplierPerformanceSummary, queryArgs);
+
+  const onTimeTrend = useMemo(() => (summary?.monthlySeries ?? []).map((row) => row.onTimeRate), [summary]);
+  const fillTrend = useMemo(() => (summary?.monthlySeries ?? []).map((row) => row.fillRate), [summary]);
+
+  const handleExport = () => {
+    if (!summary) return;
+    downloadCsv(
+      `mwrd-supplier-performance-${new Date().toISOString().slice(0, 10)}.csv`,
+      summary.fulfillmentRows.map((row) => ({
+        order_id: row.orderId,
+        purchase_order_id: row.purchaseOrderId,
+        rfq_id: row.rfqId ?? "",
+        anonymous_client: row.clientAnonymousId,
+        status: row.status,
+        required_delivery_date: row.requiredDeliveryDate ?? "",
+        delivered_at: row.deliveredAt ? new Date(row.deliveredAt).toISOString() : "",
+        on_time: row.isOnTime === null ? "" : row.isOnTime ? "yes" : "no",
+        fill_rate: row.fillRate.toFixed(2),
+        covered_quantity: row.coveredQuantity,
+        requested_quantity: row.requestedQuantity,
+        client_revenue: row.clientRevenue.toFixed(2)
+      }))
+    );
+  };
 
   return (
     <SupplierFrame
       title={t("navigation.performance")}
-      description={localize({ en: "Response quality, conversion, and fulfillment reliability", ar: "جودة الاستجابة والتحويل وموثوقية التنفيذ" }, i18n.language)}
+      description={localize({ en: "Response quality, conversion, and fulfillment reliability", ar: "جودة الاستجابة والتحويل وموثوقية التنفيذ" }, language)}
     >
-      <StatStrip
-        stats={[
-          { label: localize({ en: "Response rate", ar: "معدل الاستجابة" }, i18n.language), value: "92%", detail: localize({ en: "Last 30 days", ar: "آخر 30 يوما" }, i18n.language), trend: "+2.4%", trendTone: "positive" },
-          { label: localize({ en: "Win rate", ar: "معدل الفوز" }, i18n.language), value: "31%", detail: localize({ en: "Accepted quotes", ar: "عروض مقبولة" }, i18n.language), trend: "+3.2%", trendTone: "positive" },
-          { label: localize({ en: "On-time delivery", ar: "التسليم في الموعد" }, i18n.language), value: "94%", detail: localize({ en: "Active order history", ar: "سجل الطلبات النشطة" }, i18n.language), trend: "+4%", trendTone: "positive" },
-          { label: localize({ en: "Admin exceptions", ar: "استثناءات الإدارة" }, i18n.language), value: "1", detail: localize({ en: "Needs cleanup", ar: "تحتاج معالجة" }, i18n.language), trend: "-2", trendTone: "positive" }
-        ]}
-      />
-      <section className="grid gap-5 xl:grid-cols-2">
-        <DashboardCard title={localize({ en: "Response trend", ar: "اتجاه الاستجابة" }, i18n.language)}>
-          <SparkBars values={[58, 71, 66, 74, 82, 69, 78, 84, 77, 88, 91, 92]} tone="cyan" />
+      {!canViewPerformance ? (
+        <DashboardCard title={localize({ en: "Performance restricted", ar: "الأداء مقيد" }, language)}>
+          <p className="text-sm text-muted-foreground">{localize({ en: "Your role does not include analytics access.", ar: "دورك لا يتضمن صلاحية الوصول للتحليلات." }, language)}</p>
         </DashboardCard>
-        <DashboardCard title={localize({ en: "Fulfillment mix", ar: "توزيع التنفيذ" }, i18n.language)}>
-          <div className="grid gap-3">
-            {[
-              { label: localize({ en: "Delivered on time", ar: "تم التسليم في الموعد" }, i18n.language), value: "94%" },
-              { label: localize({ en: "Awaiting client receipt", ar: "بانتظار استلام العميل" }, i18n.language), value: "5%" },
-              { label: localize({ en: "Needs review", ar: "تحتاج مراجعة" }, i18n.language), value: "1%" }
-            ].map((item) => (
-              <div key={item.label} className="flex items-center justify-between rounded-lg bg-muted/60 p-3">
-                <span className="text-sm text-muted-foreground">{item.label}</span>
-                <span className="text-lg font-semibold">{item.value}</span>
+      ) : summary === undefined ? (
+        <DashboardCard title={localize({ en: "Loading...", ar: "جار التحميل..." }, language)}>
+          <p className="text-sm text-muted-foreground">{localize({ en: "Loading supplier performance...", ar: "جار تحميل أداء المورد..." }, language)}</p>
+        </DashboardCard>
+      ) : (
+        <>
+          <StatStrip
+            stats={[
+              { label: localize({ en: "Response rate", ar: "معدل الاستجابة" }, language), value: formatPercent(summary.responseRate), detail: localize({ en: `${summary.respondedAssignments}/${summary.assignmentCount} assignments`, ar: `${summary.respondedAssignments}/${summary.assignmentCount} تعيينات` }, language), trendTone: "positive" },
+              { label: localize({ en: "Win rate", ar: "معدل الفوز" }, language), value: formatPercent(summary.winRate), detail: localize({ en: `${summary.selectedQuotes}/${summary.quoteCount} submitted quotes`, ar: `${summary.selectedQuotes}/${summary.quoteCount} عروض مرسلة` }, language), trendTone: "positive" },
+              { label: localize({ en: "On-time delivery", ar: "التسليم في الموعد" }, language), value: formatPercent(summary.onTimeRate), detail: localize({ en: `${summary.onTimeDeliveries} on time, ${summary.lateDeliveries} late`, ar: `${summary.onTimeDeliveries} في الموعد، ${summary.lateDeliveries} متأخرة` }, language), trendTone: summary.lateDeliveries > 0 ? "neutral" : "positive" },
+              { label: localize({ en: "Fill rate", ar: "معدل التغطية" }, language), value: formatPercent(summary.fillRate), detail: localize({ en: `${summary.coveredQuantity}/${summary.requestedQuantity} requested units`, ar: `${summary.coveredQuantity}/${summary.requestedQuantity} وحدات مطلوبة` }, language), trendTone: "positive" }
+            ]}
+          />
+
+          <section className="grid gap-5 xl:grid-cols-2">
+            <DashboardCard title={localize({ en: "On-time trend", ar: "اتجاه التسليم في الموعد" }, language)} description={localize({ en: "Monthly delivered orders with required dates.", ar: "الطلبات الشهرية المسلمة مع تواريخ مطلوبة." }, language)}>
+              {onTimeTrend.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{localize({ en: "No delivery samples yet.", ar: "لا توجد عينات تسليم بعد." }, language)}</p>
+              ) : (
+                <SparkBars values={onTimeTrend} tone="cyan" />
+              )}
+            </DashboardCard>
+            <DashboardCard title={localize({ en: "Fulfillment coverage", ar: "تغطية التنفيذ" }, language)}>
+              <div className="grid gap-3">
+                {[
+                  { label: localize({ en: "Fill rate", ar: "معدل التغطية" }, language), value: formatPercent(summary.fillRate) },
+                  { label: localize({ en: "Completed orders", ar: "طلبات مكتملة" }, language), value: String(summary.completedOrders) },
+                  { label: localize({ en: "Delayed or disputed", ar: "متأخرة أو متنازع عليها" }, language), value: String(summary.delayedOrders) },
+                  { label: localize({ en: "Tracked client revenue", ar: "إيراد العميل المتابع" }, language), value: formatCurrency(summary.clientRevenue, language) }
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center justify-between rounded-lg bg-muted/60 p-3">
+                    <span className="text-sm text-muted-foreground">{item.label}</span>
+                    <span className="text-lg font-semibold">{item.value}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </DashboardCard>
-      </section>
+            </DashboardCard>
+          </section>
+
+          <DashboardCard title={localize({ en: "Fill-rate trend", ar: "اتجاه معدل التغطية" }, language)}>
+            {fillTrend.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{localize({ en: "No line-item coverage yet.", ar: "لا توجد تغطية بنود بعد." }, language)}</p>
+            ) : (
+              <SparkBars values={fillTrend} tone="sun" />
+            )}
+          </DashboardCard>
+
+          <DashboardCard
+            title={localize({ en: "Recent fulfillment", ar: "أحدث التنفيذات" }, language)}
+            action={
+              <Button type="button" size="sm" variant="outline" disabled={summary.fulfillmentRows.length === 0} onClick={handleExport}>
+                <Download className="size-4" aria-hidden="true" />
+                {localize({ en: "Export rows", ar: "تصدير الصفوف" }, language)}
+              </Button>
+            }
+          >
+            <DataTable
+              rows={summary.fulfillmentRows}
+              emptyLabel={localize({ en: "No fulfillment data yet.", ar: "لا توجد بيانات تنفيذ بعد." }, language)}
+              getRowKey={(row) => row.orderId}
+              columns={[
+                { header: "ID", cell: (row) => <span className="font-semibold">{row.orderId.slice(-6).toUpperCase()}</span> },
+                { header: localize({ en: "Anonymous client", ar: "عميل مجهول" }, language), cell: (row) => <Badge variant="outline">{row.clientAnonymousId}</Badge> },
+                { header: localize({ en: "Status", ar: "الحالة" }, language), cell: (row) => <StatusBadge tone={orderTone(row.status)}>{orderLabel(row.status, language)}</StatusBadge> },
+                {
+                  header: localize({ en: "On time", ar: "في الموعد" }, language),
+                  cell: (row) => (
+                    <StatusBadge tone={row.isOnTime === null ? "neutral" : row.isOnTime ? "info" : "danger"}>
+                      {row.isOnTime === null ? localize({ en: "No date", ar: "بدون تاريخ" }, language) : row.isOnTime ? localize({ en: "Yes", ar: "نعم" }, language) : localize({ en: "Late", ar: "متأخر" }, language)}
+                    </StatusBadge>
+                  )
+                },
+                { header: localize({ en: "Fill rate", ar: "معدل التغطية" }, language), cell: (row) => <span className="font-semibold">{formatPercent(row.fillRate)}</span> },
+                { header: localize({ en: "Required by", ar: "مطلوب بحلول" }, language), cell: (row) => <span className="text-muted-foreground">{row.requiredDeliveryDate ?? "—"}</span> }
+              ]}
+            />
+          </DashboardCard>
+        </>
+      )}
     </SupplierFrame>
   );
 }
