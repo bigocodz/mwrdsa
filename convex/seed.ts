@@ -217,6 +217,7 @@ export const _seedDemoWorkflowData = internalMutation({
       });
     }
 
+    let demoProductCounter = (await ctx.db.query("products").collect()).length;
     async function upsertProduct(input: {
       categoryId: Id<"categories">;
       sku: string;
@@ -226,7 +227,10 @@ export const _seedDemoWorkflowData = internalMutation({
       descriptionEn: string;
       specificationsAr: string;
       specificationsEn: string;
+      packTypes: readonly string[];
+      defaultUnit: string;
     }) {
+      const { packTypes, defaultUnit, ...rest } = input;
       const existing = await ctx.db
         .query("products")
         .withIndex("by_sku", (q) => q.eq("sku", input.sku))
@@ -240,13 +244,22 @@ export const _seedDemoWorkflowData = internalMutation({
           descriptionEn: input.descriptionEn,
           specificationsAr: input.specificationsAr,
           specificationsEn: input.specificationsEn,
+          packTypes: [...packTypes],
+          defaultUnit,
+          lifecycleStatus: existing.lifecycleStatus ?? "active",
+          masterProductCode: existing.masterProductCode ?? `MWRD-PROD-${String(++demoProductCounter).padStart(5, "0")}`,
           isVisible: true,
           updatedAt: now
         });
         return existing._id;
       }
+      demoProductCounter++;
       return await ctx.db.insert("products", {
-        ...input,
+        ...rest,
+        packTypes: [...packTypes],
+        defaultUnit,
+        lifecycleStatus: "active",
+        masterProductCode: `MWRD-PROD-${String(demoProductCounter).padStart(5, "0")}`,
         isVisible: true,
         createdAt: now,
         updatedAt: now
@@ -377,7 +390,9 @@ export const _seedDemoWorkflowData = internalMutation({
       descriptionAr: "كرسي مكتبي شبكي قابل للتعديل للاختبار التجريبي.",
       descriptionEn: "Adjustable mesh office chair for demo procurement flows.",
       specificationsAr: "ظهر شبكي، دعم قطني، ضمان سنتين",
-      specificationsEn: "Mesh back, lumbar support, two-year warranty"
+      specificationsEn: "Mesh back, lumbar support, two-year warranty",
+      packTypes: ["Each", "Box of 2"],
+      defaultUnit: "Each"
     });
     const laptopId = await upsertProduct({
       categoryId: technologyCategoryId,
@@ -387,7 +402,9 @@ export const _seedDemoWorkflowData = internalMutation({
       descriptionAr: "حاسوب محمول مخصص لفرق المشتريات وتقنية المعلومات.",
       descriptionEn: "Business laptop for procurement and IT teams.",
       specificationsAr: "ذاكرة 16GB، تخزين 512GB، شاشة 14 بوصة",
-      specificationsEn: "16GB RAM, 512GB SSD, 14-inch display"
+      specificationsEn: "16GB RAM, 512GB SSD, 14-inch display",
+      packTypes: ["Each"],
+      defaultUnit: "Each"
     });
     const printerId = await upsertProduct({
       categoryId: technologyCategoryId,
@@ -397,7 +414,9 @@ export const _seedDemoWorkflowData = internalMutation({
       descriptionAr: "طابعة مكتبية متعددة الوظائف للطلبات التجريبية.",
       descriptionEn: "Multifunction office printer for demo RFQs.",
       specificationsAr: "طباعة ومسح ضوئي وشبكة لاسلكية",
-      specificationsEn: "Print, scan, copy, and wireless network"
+      specificationsEn: "Print, scan, copy, and wireless network",
+      packTypes: ["Each"],
+      defaultUnit: "Each"
     });
 
     async function upsertMarginRule(input: {
@@ -608,6 +627,78 @@ export const _seedDemoWorkflowData = internalMutation({
       actorUserId: clientUser._id,
       notes: "Demo client confirmed receipt.",
       createdAt: atDays(-26)
+    });
+
+    // Demo DN/GRN/Invoice for the completed order so the three-way match
+    // queue and downstream invoice screens have realistic data on first run.
+    const demoDnId = await ctx.db.insert("deliveryNotes", {
+      spoId: completedSpoId,
+      cpoId: completedPoId,
+      transactionRef: demoTransactionRef,
+      dnNumber: `MWRD-DN-${Math.floor(atDays(-29))}`,
+      courier: "Aramex",
+      trackingNumber: "ARMX-DEMO-001",
+      dispatchDate: dateAtDays(-29),
+      expectedDeliveryDate: dateAtDays(-26),
+      createdByUserId: supplierUser._id,
+      createdAt: atDays(-29),
+      updatedAt: atDays(-29)
+    });
+    for (const lineItemId of completed.lineItemIds) {
+      await ctx.db.insert("deliveryNoteItems", {
+        deliveryNoteId: demoDnId,
+        rfqLineItemId: lineItemId,
+        qtyDispatched: 8,
+        createdAt: atDays(-29)
+      });
+    }
+    const demoGrnId = await ctx.db.insert("goodsReceiptNotes", {
+      cpoId: completedPoId,
+      deliveryNoteId: demoDnId,
+      transactionRef: demoTransactionRef,
+      grnNumber: `MWRD-GRN-${Math.floor(atDays(-26))}`,
+      receivedByUserId: clientUser._id,
+      receivedAt: atDays(-26),
+      createdAt: atDays(-26),
+      updatedAt: atDays(-26)
+    });
+    for (const lineItemId of completed.lineItemIds) {
+      await ctx.db.insert("goodsReceiptNoteItems", {
+        grnId: demoGrnId,
+        rfqLineItemId: lineItemId,
+        qtyReceived: 8,
+        condition: "ok",
+        createdAt: atDays(-26)
+      });
+    }
+    const demoInvoiceSubtotal = 35000;
+    const demoInvoiceVat = Math.round(demoInvoiceSubtotal * 0.15 * 100) / 100;
+    const demoInvoiceTotal = demoInvoiceSubtotal + demoInvoiceVat;
+    const demoInvoiceId = await ctx.db.insert("invoices", {
+      cpoId: completedPoId,
+      grnId: demoGrnId,
+      transactionRef: demoTransactionRef,
+      invoiceNumber: `MWRD-INV-${Math.floor(atDays(-25))}`,
+      subtotalSar: demoInvoiceSubtotal,
+      vatAmountSar: demoInvoiceVat,
+      totalSar: demoInvoiceTotal,
+      status: "issued",
+      issueDate: dateAtDays(-25),
+      dueDate: dateAtDays(5),
+      createdByUserId: adminUser._id,
+      createdAt: atDays(-25),
+      updatedAt: atDays(-25)
+    });
+    await ctx.db.insert("invoiceVarianceSummaries", {
+      invoiceId: demoInvoiceId,
+      cpoId: completedPoId,
+      grnId: demoGrnId,
+      poTotalSar: demoInvoiceTotal,
+      grnTotalSar: demoInvoiceTotal,
+      invoiceTotalSar: demoInvoiceTotal,
+      variancePct: 0,
+      withinTolerance: true,
+      updatedAt: atDays(-25)
     });
 
     const released = await insertRfq({
@@ -831,6 +922,10 @@ export const _seedLoadTestBatch = internalMutation({
         descriptionEn: "Synthetic item for load testing procurement flows.",
         specificationsAr: "مواصفات قياسية لاختبار الحمل",
         specificationsEn: "Standard load-test specification",
+        packTypes: ["Each"],
+        defaultUnit: "Each",
+        lifecycleStatus: "active" as const,
+        masterProductCode: `MWRD-PROD-LOAD-${String(index + 1).padStart(5, "0")}`,
         isVisible: true,
         updatedAt: now
       };
@@ -1146,5 +1241,195 @@ export const seedLoadTestData = action({
       supplierCount,
       batchSize
     };
+  }
+});
+
+// Slice 23: 200+ realistic master products seed
+const MASTER_PRODUCT_GROUPS = [
+  { catAr: "تجهيزات مكتبية", catEn: "Office Equipment", items: [
+    ["OFF-001","كرسي مكتبي مريح","Ergonomic Chair","Adjustable mesh office chair","Mesh back, lumbar support, 2yr warranty",["Each"],"Each"],
+    ["OFF-002","مكتب قابل للتعديل","Height-Adjustable Desk","Electric sit-stand desk","140×70cm, electric, memory presets",["Each"],"Each"],
+    ["OFF-003","خزانة ملفات","Filing Cabinet","4-drawer steel filing cabinet","A4 lateral, lockable, grey",["Each"],"Each"],
+    ["OFF-004","رف مكتبي","Office Bookshelf","5-shelf bookcase","Steel frame, 180×90×35cm",["Each"],"Each"],
+    ["OFF-005","لوحة بيضاء","Magnetic Whiteboard","Porcelain magnetic whiteboard","120×90cm, aluminium frame",["Each"],"Each"],
+    ["OFF-006","حامل شاشة","Dual Monitor Arm","VESA monitor arm mount","VESA 75/100, 6kg per arm",["Each"],"Each"],
+    ["OFF-007","مصباح مكتبي LED","LED Desk Lamp","Dimmable LED desk lamp","10W, 3000–6500K, USB charging",["Each"],"Each"],
+    ["OFF-008","سلة مهملات","Waste Bin 30L","30L office waste bin","Polypropylene, pedal-operated",["Each","Box of 5"],"Each"],
+    ["OFF-009","حاجز خصوصية","Desk Privacy Screen","Acrylic desk divider","60×40cm, clear acrylic",["Each"],"Each"],
+    ["OFF-010","لوحة عروض قلاّبة","Flipchart Easel","Adjustable presentation easel","Aluminium, folds flat",["Each"],"Each"],
+    ["OFF-011","حامل وثائق","Document Stand","Adjustable document holder","A4/A3, anti-glare",["Each"],"Each"],
+    ["OFF-012","صندوق بريد داخلي","Desktop Inbox Tray","3-tier wire desk tray","Steel wire, black, A4",["Each"],"Each"],
+    ["OFF-013","حاوية أقلام","Pen Holder","Desktop pen & pencil holder","Mesh steel, black",["Each","Box of 6"],"Each"],
+    ["OFF-014","آلة تدمير ورق","Paper Shredder P4","Cross-cut paper shredder","P4 security, 12 sheets, 22L bin",["Each"],"Each"],
+    ["OFF-015","آلة ختم","Electric Stapler","Heavy-duty electric stapler","120 sheets, jam-free, 5000 staples",["Each"],"Each"]
+  ]},
+  { catAr: "تقنية المعلومات", catEn: "Information Technology", items: [
+    ["IT-001","حاسوب محمول للأعمال","Business Laptop 14\"","Enterprise laptop","i7, 16GB, 512GB NVMe, FHD",["Each"],"Each"],
+    ["IT-002","شاشة QHD 27\"","27\" QHD Monitor","IPS QHD display","2560×1440, 75Hz, HDMI/DP",["Each"],"Each"],
+    ["IT-003","طابعة ليزرية","Laser MFP Printer","Mono multifunction laser","35ppm, duplex, network",["Each"],"Each"],
+    ["IT-004","نقطة وصول Wi-Fi 6","Wi-Fi 6 Access Point","Enterprise wireless AP","802.11ax, PoE, dual-band",["Each"],"Each"],
+    ["IT-005","محوّل 24 منفذ","24-Port Managed Switch","Layer 2 managed switch","24×GbE, 4×SFP, rack-mount",["Each"],"Each"],
+    ["IT-006","خادم برج","Tower Server","Entry-level tower server","Xeon E-2300, 32GB ECC, 2×2TB",["Each"],"Each"],
+    ["IT-007","جهاز NAS","NAS Storage Appliance","4-bay network storage","2×GbE, RAID 0/1/5/6",["Each"],"Each"],
+    ["IT-008","كاميرا مؤتمرات","Video Conference Camera","4K PTZ conferencing camera","4K, 12× optical zoom, USB/HDMI",["Each"],"Each"],
+    ["IT-009","هاتف IP مكتبي","IP Desk Phone","VoIP office telephone","6 SIP, PoE, colour display",["Each"],"Each"],
+    ["IT-010","ذاكرة خادم 32GB","Server RAM 32GB DDR5","ECC registered DIMM","DDR5-4800 ECC RDIMM",["Each","Box of 4"],"Each"],
+    ["IT-011","كابل شبكة Cat6 2m","Cat6 Patch Cable 2m","Cat6 ethernet patch cable","2m, RJ45, 10Gbps, LSZH",["Each","Box of 50"],"Each"],
+    ["IT-012","محرك USB 128GB","USB Flash Drive 128GB","USB 3.2 flash drive","128GB, USB 3.2 Gen 1, metal",["Each","Box of 10"],"Each"],
+    ["IT-013","لوحة مفاتيح لاسلكية","Wireless Keyboard & Mouse","Wireless keyboard and mouse combo","2.4GHz, quiet keys, 12m range",["Each"],"Each"],
+    ["IT-014","رأس طباعة حرارية","Thermal Label Printer","Desktop label printer","203dpi, USB, up to 108mm wide",["Each"],"Each"],
+    ["IT-015","وحدة KVM 8 منافذ","8-Port KVM Switch","8-port KVM switch","USB, HDMI, hotkey switching",["Each"],"Each"],
+    ["IT-016","شاشة 32\" 4K","32\" 4K UHD Monitor","IPS 4K display","3840×2160, 60Hz, USB-C 65W",["Each"],"Each"],
+    ["IT-017","محوّل DisplayPort","DisplayPort to HDMI Adapter","DP to HDMI adapter","4K@60Hz, passive, gold-plated",["Each","Box of 10"],"Each"],
+    ["IT-018","هاتف ذكي عمل","Enterprise Smartphone","Android business smartphone","6.1\", 5G, 128GB, MDM-ready",["Each"],"Each"]
+  ]},
+  { catAr: "قرطاسية ومستلزمات", catEn: "Stationery & Supplies", items: [
+    ["STA-001","ورق طباعة A4 80gsm","A4 Copy Paper 80gsm","Premium white copy paper","80gsm, 500 sheets/ream",["Ream","Box of 5"],"Ream"],
+    ["STA-002","أقلام جافة زرقاء","Blue Ballpoint Pens","Medium-tip ballpoint pens","0.7mm, box of 50",["Box of 12","Box of 50"],"Box of 50"],
+    ["STA-003","دفاتر A5","A5 Notebooks","Lined softcover notebooks","80 pages, 5mm ruling",["Each","Box of 10"],"Each"],
+    ["STA-004","أقلام سبورة","Whiteboard Markers","Dry-erase markers","Assorted 12 colours, chisel",["Box of 12"],"Box of 12"],
+    ["STA-005","مشابك ورق 25mm","Binder Clips 25mm","Medium binder clips","Box of 100",["Box of 100"],"Box of 100"],
+    ["STA-006","دبابيس تدبيس","Staples 26/6","Standard staples","1000/strip, 5000/box",["Box of 5000"],"Box of 5000"],
+    ["STA-007","ملفات ورقية","Manila File Folders","A4 manila folders","Buff, box of 100",["Box of 100"],"Box of 100"],
+    ["STA-008","ملاحظات لاصقة 76mm","Sticky Notes 76×76mm","Repositionable notes","100 sheets, 12 pads, yellow",["Pack of 12"],"Pack of 12"],
+    ["STA-009","أقلام تظليل","Highlighters Assorted","Fluorescent highlighters","5 colours, box of 10 sets",["Box of 10"],"Box of 10"],
+    ["STA-010","أظرف A4","A4 Envelopes","Plain white envelopes","Self-seal, box of 250",["Box of 250"],"Box of 250"],
+    ["STA-011","مقصات مكتبية","Office Scissors 21cm","Stainless steel scissors","21cm, soft-grip",["Each","Box of 12"],"Each"],
+    ["STA-012","غراء دهاني","Glue Stick 40g","Washable glue stick","40g, acid-free, box of 24",["Each","Box of 24"],"Each"],
+    ["STA-013","ورق ملوّن A4","Coloured Copy Paper A4","80gsm coloured copy paper","Assorted 5 colours, 500 sheets",["Ream"],"Ream"],
+    ["STA-014","شرائط لاصقة","Clear Adhesive Tape 19mm","Transparent adhesive tape","19mm×33m, 12 rolls/pack",["Pack of 12"],"Pack of 12"],
+    ["STA-015","مثقاب ورق","2-Hole Punch","Heavy-duty paper punch","2-hole, 30 sheets, metal",["Each"],"Each"]
+  ]},
+  { catAr: "نظافة وتعقيم", catEn: "Cleaning & Hygiene", items: [
+    ["CLN-001","منظف متعدد الأسطح 5L","Multi-Surface Cleaner 5L","Professional cleaner refill","Antibacterial, fragrance-free",["Each","Case of 4"],"Each"],
+    ["CLN-002","معقم يدين 500ml","Hand Sanitiser 500ml","70% alcohol sanitiser","500ml pump, WHO formula",["Each","Case of 12"],"Each"],
+    ["CLN-003","مناشف ورقية","Paper Hand Towels","Interleaved paper towels","2-ply, 150/pack, 20/case",["Pack","Case of 20"],"Pack"],
+    ["CLN-004","ورق تواليت","Toilet Paper 2-Ply","Premium toilet paper","400 sheets, 48 rolls/case",["Case of 48"],"Case of 48"],
+    ["CLN-005","أكياس قمامة 80L","Bin Liners 80L","Heavy-duty bin liners","80L, black HDPE, 50/roll",["Roll of 50","Box of 10 rolls"],"Roll of 50"],
+    ["CLN-006","مبيد جراثيم 1L","Surface Disinfectant 1L","Ready-to-use disinfectant","Kills 99.9%, trigger spray",["Each","Case of 6"],"Each"],
+    ["CLN-007","قفازات فحص لاتكس M","Latex Gloves Medium","Disposable latex gloves","Powder-free, 100/box",["Box of 100","Case of 10"],"Box of 100"],
+    ["CLN-008","منظف زجاج","Glass Cleaner 750ml","Streak-free glass cleaner","750ml trigger spray",["Each","Case of 12"],"Each"],
+    ["CLN-009","مسحوق غسيل 10kg","Laundry Powder 10kg","Commercial laundry powder","Low-foam, 10kg",["Each"],"Each"],
+    ["CLN-010","معطر هواء","Air Freshener Spray 300ml","Room air freshener","300ml aerosol",["Each","Case of 12"],"Each"]
+  ]},
+  { catAr: "السلامة والصحة المهنية", catEn: "Safety & PPE", items: [
+    ["PPE-001","خوذة سلامة","Safety Helmet Class A","Construction hard hat","ANSI Z89.1, Class A, yellow",["Each"],"Each"],
+    ["PPE-002","حذاء سلامة","Safety Boots S3","Steel toe-cap safety boots","S3 SRC, steel toe",["Pair"],"Pair"],
+    ["PPE-003","نظارات واقية","Safety Glasses Clear","Anti-scratch safety specs","EN166, clear polycarbonate",["Each","Box of 10"],"Each"],
+    ["PPE-004","سترة عاكسة","Hi-Vis Vest Class 2","High-visibility safety vest","Class 2, EN ISO 20471, yellow",["Each"],"Each"],
+    ["PPE-005","قفازات مقاومة للقطع","Cut-Resistant Gloves L","Level 5 cut-resistant gloves","EN388:2016 level 5",["Pair","Box of 12 pairs"],"Pair"],
+    ["PPE-006","قناع N95","N95 Respirator Mask","Disposable N95 respirator","NIOSH N95, box of 20",["Box of 20"],"Box of 20"],
+    ["PPE-007","حذاء علوي عاكس","Hi-Vis Rain Jacket","High-visibility rain jacket","Class 3, EN471, XS–4XL",["Each"],"Each"],
+    ["PPE-008","خرطوم أوكسجين","Emergency Eye Wash","Portable eye wash station","ANSI Z358.1, 18L",["Each"],"Each"]
+  ]},
+  { catAr: "الأثاث", catEn: "Furniture", items: [
+    ["FRN-001","طاولة اجتماعات 240cm","Conference Table 240cm","Oval conference table","240×110cm, seats 10",["Each"],"Each"],
+    ["FRN-002","كرسي زوار","Visitor Chair","Upholstered visitor chair","Fabric, chrome legs, stackable",["Each","Set of 4"],"Each"],
+    ["FRN-003","خزانة شخصية","Steel Storage Locker","6-door personal locker","Individual locks, 180×90×45cm",["Each"],"Each"],
+    ["FRN-004","حاجز مكتبي","Office Partition 120cm","Acoustic office partition","120×150cm, fabric panel",["Each"],"Each"],
+    ["FRN-005","رف صناعي ثقيل","Industrial Storage Rack","Heavy-duty shelving","5 shelves, 300kg/shelf",["Each"],"Each"],
+    ["FRN-006","أريكة استقبال","Reception Sofa 3-Seater","Modern reception sofa","3-seater, PU leather",["Each"],"Each"],
+    ["FRN-007","خزانة معدات","Equipment Trolley","Mobile AV/equipment cart","3 shelves, lockable, castors",["Each"],"Each"],
+    ["FRN-008","طاولة نبيذية","Side Table","End table for lounge area","Powder-coated steel, 50cm round",["Each"],"Each"]
+  ]},
+  { catAr: "الكهرباء والإضاءة", catEn: "Electrical & Lighting", items: [
+    ["ELC-001","لمبة LED E27 10W","LED Bulb E27 10W","Energy-saving LED","4000K, 1000lm, 25,000h",["Each","Box of 10"],"Each"],
+    ["ELC-002","أنبوب LED T8 18W","LED Tube T8 18W","Replacement fluorescent LED","18W, 4000K, 1800lm, 30,000h",["Each","Box of 25"],"Each"],
+    ["ELC-003","وصلة 6 مآخذ","6-Way Power Strip 2m","Surge-protected power strip","6 outlets, 2m, 2500W",["Each"],"Each"],
+    ["ELC-004","UPS 1000VA","UPS 1000VA/600W","Uninterruptible power supply","8 outlets, LCD, USB",["Each"],"Each"],
+    ["ELC-005","كاميرا IP 4MP","4MP IP Security Camera","Outdoor PoE IP camera","4MP, IR 30m, IP67, PoE",["Each"],"Each"],
+    ["ELC-006","لوحة شمسية 200W","Solar Panel 200W","Monocrystalline solar panel","200W, IP68, 25yr warranty",["Each"],"Each"],
+    ["ELC-007","بطارية UPS 12V 7Ah","UPS Replacement Battery","Sealed lead-acid battery","12V 7Ah, maintenance-free",["Each","Box of 4"],"Each"]
+  ]},
+  { catAr: "مستلزمات الطباعة", catEn: "Print Consumables", items: [
+    ["PRT-001","خرطوشة حبر سوداء HY","Toner Cartridge Black HY","High-yield black toner","10,000 pages",["Each"],"Each"],
+    ["PRT-002","خرطوشة حبر سيان HY","Toner Cartridge Cyan HY","High-yield cyan toner","5,000 pages, ISO 19798",["Each"],"Each"],
+    ["PRT-003","خرطوشة حبر أصفر HY","Toner Cartridge Yellow HY","High-yield yellow toner","5,000 pages, ISO 19798",["Each"],"Each"],
+    ["PRT-004","خرطوشة حبر أرجواني HY","Toner Cartridge Magenta HY","High-yield magenta toner","5,000 pages, ISO 19798",["Each"],"Each"],
+    ["PRT-005","ورق صور لامع A4","Glossy Photo Paper A4","High-gloss inkjet paper","200gsm, 50 sheets",["Pack of 50"],"Pack of 50"],
+    ["PRT-006","وحدة تصوير","Drum Imaging Unit","Replacement drum unit","30,000 pages yield",["Each"],"Each"],
+    ["PRT-007","ملصقات A4","A4 Label Sheets","Self-adhesive label sheets","White, 21/sheet, 100 sheets",["Pack of 100"],"Pack of 100"],
+    ["PRT-008","حبر طابعة ألوان","Ink Cartridge Colour Tri-Pack","Colour inkjet cartridge pack","Cyan/magenta/yellow, ISO 24711",["Pack of 3"],"Pack of 3"]
+  ]},
+  { catAr: "مناولة المواد", catEn: "Materials Handling", items: [
+    ["MHE-001","عربة نقل يدوية","Hand Truck 300kg","Steel folding hand truck","300kg, rubber wheels",["Each"],"Each"],
+    ["MHE-002","رافعة يدوية 2T","Manual Pallet Jack 2T","Hydraulic pallet jack","2,000kg, forks 1150×550mm",["Each"],"Each"],
+    ["MHE-003","شريط تغليف","Packing Tape 48mm×50m","Strong brown packing tape","Acrylic adhesive, 36/case",["Roll","Case of 36"],"Roll"],
+    ["MHE-004","ورق فقاعي 500mm","Bubble Wrap 500mm×50m","Small-bubble protective wrap","500mm wide, 10mm bubbles",["Roll"],"Roll"],
+    ["MHE-005","صندوق تخزين 50L","Plastic Storage Box 50L","Stackable storage crate","50L, HDPE, 60×40×33cm",["Each","Pallet of 48"],"Each"],
+    ["MHE-006","تسمية رف باركود","Barcode Shelf Label","Adhesive shelf label","50×25mm, thermal, 500/roll",["Roll of 500"],"Roll of 500"]
+  ]},
+  { catAr: "ضيافة ومقاصف", catEn: "Catering & Hospitality", items: [
+    ["CAT-001","ماكينة قهوة مكتبية","Office Coffee Machine","Bean-to-cup coffee maker","15-bar, 1.8L tank, 1450W",["Each"],"Each"],
+    ["CAT-002","كبسولات قهوة","Coffee Capsules Espresso","Compatible espresso pods","10/sleeve, medium roast",["Sleeve of 10","Box of 100"],"Box of 100"],
+    ["CAT-003","برّاد مياه","Water Dispenser Hot/Cold","Bottleless water dispenser","Hot/cold/ambient, plumbed-in",["Each"],"Each"],
+    ["CAT-004","أكواب ورقية 8oz","Paper Cups 8oz","Hot-drink paper cups","8oz, 1000/case",["Sleeve of 50","Case of 1000"],"Case of 1000"],
+    ["CAT-005","ثلاجة مكتب 60L","Compact Office Fridge 60L","Under-counter mini fridge","60L, A+, reversible door",["Each"],"Each"],
+    ["CAT-006","مغسلة صحون كهربائية","Commercial Dishwasher","Undercounter dishwasher","40 cycles/hr, 230V, 2.9kW",["Each"],"Each"],
+    ["CAT-007","غلاية كهربائية 1.7L","Electric Kettle 1.7L","Stainless steel kettle","1.7L, 3kW, auto cut-off",["Each"],"Each"]
+  ]}
+];
+
+export const _seedMasterProductCatalog = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    let categoryCount = 0;
+    let productCount = 0;
+    let skippedCount = 0;
+    let productCounter = (await ctx.db.query("products").collect()).length;
+
+    for (const group of MASTER_PRODUCT_GROUPS) {
+      const allCategories = await ctx.db.query("categories").collect();
+      const existingCat = allCategories.find((c) => c.nameEn === group.catEn);
+      const categoryId = existingCat
+        ? existingCat._id
+        : await ctx.db.insert("categories", {
+            parentCategoryId: undefined,
+            nameAr: group.catAr,
+            nameEn: group.catEn,
+            isActive: true,
+            createdAt: now,
+            updatedAt: now
+          });
+      if (!existingCat) categoryCount++;
+
+      for (const item of group.items) {
+        const [sku, nameAr, nameEn, descriptionEn, specificationsEn, packTypes, defaultUnit] = item as [string, string, string, string, string, string[], string];
+        const existing = await ctx.db
+          .query("products")
+          .withIndex("by_sku", (q) => q.eq("sku", sku))
+          .first();
+        if (existing) { skippedCount++; continue; }
+        productCounter++;
+        await ctx.db.insert("products", {
+          categoryId,
+          sku,
+          masterProductCode: `MWRD-PROD-${String(productCounter).padStart(5, "0")}`,
+          nameAr,
+          nameEn,
+          descriptionAr: nameAr,
+          descriptionEn,
+          specificationsAr: specificationsEn,
+          specificationsEn,
+          packTypes,
+          defaultUnit,
+          lifecycleStatus: "active",
+          isVisible: true,
+          createdAt: now,
+          updatedAt: now
+        });
+        productCount++;
+      }
+    }
+
+    return { categoryCount, productCount, skippedCount, totalProducts: productCounter };
+  }
+});
+
+export const seedMasterProducts = action({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.runMutation(internal.seed._seedMasterProductCatalog, {});
   }
 });

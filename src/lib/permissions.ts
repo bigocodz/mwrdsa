@@ -21,7 +21,8 @@ export const rolePermissionMatrix = {
     "quote:release",
     "order:view_own",
     "audit:view",
-    "analytics:view"
+    "analytics:view",
+    "superAdmin:manage"
   ],
   operationsManager: ["portal:admin:access", "organization:update", "rfq:manage_operations", "rfq:assign_suppliers", "quote:review", "order:view_own", "audit:view", "analytics:view"],
   pricingAnalyst: ["portal:admin:access", "quote:review", "quote:apply_margin", "quote:release", "audit:view", "analytics:view"],

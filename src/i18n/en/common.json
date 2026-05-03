@@ -21,7 +21,12 @@
     "clients": "Clients",
     "suppliers": "Suppliers",
     "audit": "Audit",
-    "approval_tree": "Approval tree"
+    "approval_tree": "Approval tree",
+    "three_way_match": "Three-way match",
+    "address_book": "Address book",
+    "bundles": "Essentials packs",
+    "company_catalogs": "Company catalogs",
+    "internal_users": "Internal users"
   },
   "client": {
     "title": "Client Portal",

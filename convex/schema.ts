@@ -99,6 +99,14 @@ const orderStatus = v.union(
   v.literal("disputed"),
   v.literal("delayed")
 );
+// Slice 23: RFQ source flag
+const rfqSource = v.union(
+  v.literal("catalog"),
+  v.literal("nonCatalog"),
+  v.literal("companyCatalog"),
+  v.literal("bundle"),
+  v.literal("repeat")
+);
 
 export default defineSchema({
   organizations: defineTable({
@@ -182,6 +190,10 @@ export default defineSchema({
   products: defineTable({
     categoryId: v.id("categories"),
     sku: v.string(),
+    masterProductCode: v.optional(v.string()),
+    packTypes: v.optional(v.array(v.string())),
+    defaultUnit: v.optional(v.string()),
+    lifecycleStatus: v.optional(v.union(v.literal("active"), v.literal("deprecated"))),
     nameAr: v.string(),
     nameEn: v.string(),
     descriptionAr: v.optional(v.string()),
@@ -195,6 +207,7 @@ export default defineSchema({
   })
     .index("by_category", ["categoryId"])
     .index("by_sku", ["sku"])
+    .index("by_master_product_code", ["masterProductCode"])
     .index("by_visible", ["isVisible"])
     .index("by_visible_category", ["isVisible", "categoryId"])
     .index("by_updated_at", ["updatedAt"]),
@@ -203,7 +216,9 @@ export default defineSchema({
     clientOrganizationId: v.id("organizations"),
     createdByUserId: v.id("users"),
     status: rfqStatus,
+    source: v.optional(rfqSource),
     requiredDeliveryDate: v.optional(v.string()),
+    deliveryAddressId: v.optional(v.id("addresses")),
     department: v.optional(v.string()),
     branch: v.optional(v.string()),
     costCenter: v.optional(v.string()),
@@ -339,6 +354,16 @@ export default defineSchema({
     packType: v.string(),
     minOrderQuantity: v.number(),
     unitCost: v.number(),
+    packTypePricing: v.optional(
+      v.array(
+        v.object({
+          packType: v.string(),
+          supplierCostSar: v.number(),
+          minOrderQuantity: v.number()
+        })
+      )
+    ),
+    fulfillmentMode: v.optional(v.union(v.literal("express"), v.literal("market"))),
     leadTimeDays: v.number(),
     availableQuantity: v.optional(v.number()),
     autoQuoteEnabled: v.boolean(),
@@ -474,6 +499,103 @@ export default defineSchema({
     .index("by_order", ["orderId"])
     .index("by_status", ["status"]),
 
+  deliveryNotes: defineTable({
+    spoId: v.id("purchaseOrders"),
+    cpoId: v.id("purchaseOrders"),
+    transactionRef: v.optional(v.string()),
+    dnNumber: v.string(),
+    courier: v.string(),
+    trackingNumber: v.string(),
+    dispatchDate: v.string(),
+    expectedDeliveryDate: v.string(),
+    notes: v.optional(v.string()),
+    createdByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number()
+  })
+    .index("by_spo", ["spoId"])
+    .index("by_cpo", ["cpoId"])
+    .index("by_transaction_ref", ["transactionRef"]),
+
+  deliveryNoteItems: defineTable({
+    deliveryNoteId: v.id("deliveryNotes"),
+    rfqLineItemId: v.id("rfqLineItems"),
+    qtyDispatched: v.number(),
+    notes: v.optional(v.string()),
+    createdAt: v.number()
+  }).index("by_delivery_note", ["deliveryNoteId"]),
+
+  goodsReceiptNotes: defineTable({
+    cpoId: v.id("purchaseOrders"),
+    deliveryNoteId: v.id("deliveryNotes"),
+    transactionRef: v.optional(v.string()),
+    grnNumber: v.string(),
+    receivedByUserId: v.id("users"),
+    receivedAt: v.number(),
+    notes: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number()
+  })
+    .index("by_cpo", ["cpoId"])
+    .index("by_delivery_note", ["deliveryNoteId"])
+    .index("by_transaction_ref", ["transactionRef"]),
+
+  goodsReceiptNoteItems: defineTable({
+    grnId: v.id("goodsReceiptNotes"),
+    rfqLineItemId: v.id("rfqLineItems"),
+    qtyReceived: v.number(),
+    condition: v.union(v.literal("ok"), v.literal("damaged"), v.literal("short")),
+    notes: v.optional(v.string()),
+    createdAt: v.number()
+  }).index("by_grn", ["grnId"]),
+
+  invoices: defineTable({
+    cpoId: v.id("purchaseOrders"),
+    grnId: v.id("goodsReceiptNotes"),
+    transactionRef: v.optional(v.string()),
+    invoiceNumber: v.string(),
+    subtotalSar: v.number(),
+    vatAmountSar: v.number(),
+    totalSar: v.number(),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("issued"),
+      v.literal("onHold"),
+      v.literal("paid"),
+      v.literal("overdue"),
+      v.literal("cancelled")
+    ),
+    holdReason: v.optional(v.string()),
+    issueDate: v.optional(v.string()),
+    dueDate: v.optional(v.string()),
+    paymentIntentId: v.optional(v.string()),
+    createdByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number()
+  })
+    .index("by_cpo", ["cpoId"])
+    .index("by_grn", ["grnId"])
+    .index("by_transaction_ref", ["transactionRef"])
+    .index("by_status_updated_at", ["status", "updatedAt"]),
+
+  invoiceVarianceSummaries: defineTable({
+    invoiceId: v.id("invoices"),
+    cpoId: v.id("purchaseOrders"),
+    grnId: v.id("goodsReceiptNotes"),
+    poTotalSar: v.number(),
+    grnTotalSar: v.number(),
+    invoiceTotalSar: v.number(),
+    variancePct: v.number(),
+    withinTolerance: v.boolean(),
+    holdReason: v.optional(v.string()),
+    decidedByUserId: v.optional(v.id("users")),
+    decidedAt: v.optional(v.number()),
+    decisionNote: v.optional(v.string()),
+    updatedAt: v.number()
+  })
+    .index("by_invoice", ["invoiceId"])
+    .index("by_within_tolerance", ["withinTolerance", "updatedAt"]),
+
   notifications: defineTable({
     recipientUserId: v.id("users"),
     type: v.string(),
@@ -603,5 +725,75 @@ export default defineSchema({
     updatedAt: v.number()
   })
     .index("by_supplier_day", ["supplierOrganizationId", "day"])
-    .index("by_day", ["day"])
+    .index("by_day", ["day"]),
+
+  // Slice 20: Address Book
+  addresses: defineTable({
+    organizationId: v.id("organizations"),
+    createdByUserId: v.id("users"),
+    label: v.string(),
+    recipientName: v.string(),
+    phone: v.optional(v.string()),
+    addressLine1: v.string(),
+    addressLine2: v.optional(v.string()),
+    city: v.string(),
+    region: v.optional(v.string()),
+    postalCode: v.optional(v.string()),
+    country: v.string(),
+    isDefault: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number()
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_organization_default", ["organizationId", "isDefault"])
+    .index("by_organization_updated_at", ["organizationId", "updatedAt"]),
+
+  // Slice 21: Bundles / Essentials Packs
+  bundles: defineTable({
+    organizationId: v.id("organizations"),
+    createdByUserId: v.id("users"),
+    nameAr: v.string(),
+    nameEn: v.string(),
+    descriptionAr: v.optional(v.string()),
+    descriptionEn: v.optional(v.string()),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number()
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_organization_active", ["organizationId", "isActive"])
+    .index("by_organization_updated_at", ["organizationId", "updatedAt"]),
+
+  bundleItems: defineTable({
+    bundleId: v.id("bundles"),
+    productId: v.id("products"),
+    quantity: v.number(),
+    unit: v.string(),
+    notes: v.optional(v.string()),
+    createdAt: v.number()
+  }).index("by_bundle", ["bundleId"]),
+
+  // Slice 22: Company Catalogs
+  companyCatalogs: defineTable({
+    organizationId: v.id("organizations"),
+    createdByUserId: v.id("users"),
+    nameAr: v.string(),
+    nameEn: v.string(),
+    descriptionAr: v.optional(v.string()),
+    descriptionEn: v.optional(v.string()),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number()
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_organization_active", ["organizationId", "isActive"])
+    .index("by_organization_updated_at", ["organizationId", "updatedAt"]),
+
+  companyCatalogItems: defineTable({
+    companyCatalogId: v.id("companyCatalogs"),
+    productId: v.id("products"),
+    preferredUnit: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    createdAt: v.number()
+  }).index("by_catalog", ["companyCatalogId"]),
 });

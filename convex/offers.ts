@@ -254,7 +254,17 @@ export const upsertSupplierOffer = mutation({
     leadTimeDays: v.number(),
     availableQuantity: v.optional(v.number()),
     autoQuoteEnabled: v.boolean(),
-    reviewWindowMinutes: v.number()
+    reviewWindowMinutes: v.number(),
+    fulfillmentMode: v.optional(v.union(v.literal("express"), v.literal("market"))),
+    packTypePricing: v.optional(
+      v.array(
+        v.object({
+          packType: v.string(),
+          supplierCostSar: v.number(),
+          minOrderQuantity: v.number()
+        })
+      )
+    )
   },
   handler: async (ctx, args) => {
     const { actor, supplierOrganizationId } = await assertSupplierActor(ctx, args.actorUserId);
@@ -268,12 +278,44 @@ export const upsertSupplierOffer = mutation({
     if (!packType) {
       throw new Error("Pack type is required.");
     }
+
+    let normalizedPricing: { packType: string; supplierCostSar: number; minOrderQuantity: number }[] | undefined;
+    if (args.packTypePricing && args.packTypePricing.length > 0) {
+      const allowed = product.packTypes && product.packTypes.length > 0
+        ? new Set(product.packTypes)
+        : null;
+      const seen = new Set<string>();
+      normalizedPricing = args.packTypePricing.map((entry) => {
+        const cleanedPack = entry.packType.trim();
+        if (!cleanedPack) {
+          throw new Error("Pack type pricing entries require a pack type.");
+        }
+        if (allowed && !allowed.has(cleanedPack)) {
+          throw new Error(`Pack type "${cleanedPack}" is not allowed for this product.`);
+        }
+        if (seen.has(cleanedPack)) {
+          throw new Error(`Pack type "${cleanedPack}" listed twice in pricing.`);
+        }
+        seen.add(cleanedPack);
+        return {
+          packType: cleanedPack,
+          supplierCostSar: positiveNumber(entry.supplierCostSar, `Cost for ${cleanedPack}`),
+          minOrderQuantity: positiveNumber(entry.minOrderQuantity, `MOQ for ${cleanedPack}`)
+        };
+      });
+      if (!seen.has(packType)) {
+        throw new Error("Default pack type must appear in pack type pricing entries.");
+      }
+    }
+
     const now = Date.now();
     const payload = {
       supplierSku: cleanOptionalText(args.supplierSku),
       packType,
       minOrderQuantity: positiveNumber(args.minOrderQuantity, "Minimum order quantity"),
       unitCost: positiveNumber(args.unitCost, "Unit cost"),
+      packTypePricing: normalizedPricing,
+      fulfillmentMode: args.fulfillmentMode,
       leadTimeDays: positiveNumber(args.leadTimeDays, "Lead time"),
       availableQuantity: nonNegativeOptionalNumber(args.availableQuantity, "Available quantity"),
       autoQuoteEnabled: args.autoQuoteEnabled,

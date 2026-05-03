@@ -8,13 +8,18 @@
  * @module
  */
 
+import type * as addresses from "../addresses.js";
+import type * as admin from "../admin.js";
 import type * as analytics from "../analytics.js";
 import type * as approvals from "../approvals.js";
 import type * as audit from "../audit.js";
 import type * as auth from "../auth.js";
 import type * as betterAuth_index from "../betterAuth/index.js";
+import type * as bundles from "../bundles.js";
 import type * as catalog from "../catalog.js";
+import type * as companyCatalogs from "../companyCatalogs.js";
 import type * as crons from "../crons.js";
+import type * as documents from "../documents.js";
 import type * as http from "../http.js";
 import type * as idempotency from "../idempotency.js";
 import type * as notifications from "../notifications.js";
@@ -42,13 +47,18 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  addresses: typeof addresses;
+  admin: typeof admin;
   analytics: typeof analytics;
   approvals: typeof approvals;
   audit: typeof audit;
   auth: typeof auth;
   "betterAuth/index": typeof betterAuth_index;
+  bundles: typeof bundles;
   catalog: typeof catalog;
+  companyCatalogs: typeof companyCatalogs;
   crons: typeof crons;
+  documents: typeof documents;
   http: typeof http;
   idempotency: typeof idempotency;
   notifications: typeof notifications;

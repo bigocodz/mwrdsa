@@ -5,6 +5,8 @@ import { AdminLeadsPage } from "@/features/admin/pages/admin-leads-page";
 import { AdminOfferApprovalsPage } from "@/features/admin/pages/admin-offer-approvals-page";
 import { AdminReportsPage } from "@/features/admin/pages/admin-reports-page";
 import { AdminRfqPricingPage } from "@/features/admin/pages/admin-rfq-pricing-page";
+import { AdminSuperadminPage } from "@/features/admin/pages/admin-superadmin-page";
+import { AdminThreeWayMatchPage } from "@/features/admin/pages/admin-three-way-match-page";
 import {
   AdminAuditPage,
   AdminCatalogPage,
@@ -34,12 +36,15 @@ export const backofficeRouter = createBrowserRouter([
       { path: "kyc", element: <AdminKycPage /> },
       { path: "operations", element: <AdminOperationsPage /> },
       { path: "operations/:rfqId", element: <AdminRfqPricingPage /> },
+      { path: "three-way-match", element: <AdminThreeWayMatchPage /> },
       { path: "clients", element: <AdminClientsPage /> },
       { path: "suppliers", element: <AdminSuppliersPage /> },
       { path: "catalog", element: <AdminCatalogPage /> },
       { path: "offers", element: <AdminOfferApprovalsPage /> },
       { path: "reports", element: <AdminReportsPage /> },
-      { path: "audit", element: <AdminAuditPage /> }
+      { path: "audit", element: <AdminAuditPage /> },
+      // Slice 25: SuperAdmin internal user management
+      { path: "internal-users", element: <AdminSuperadminPage /> }
     ]
   },
   { path: "*", element: <NotFoundPage /> }

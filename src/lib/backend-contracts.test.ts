@@ -160,6 +160,104 @@ describe("backend scale contracts", () => {
     expect(exportedBlock(rfqs, "deleteSavedRfqCartForActor")).toContain("rfq_cart.deleted");
   });
 
+  it("keeps master product codes + pack-type repeater wired", () => {
+    const schema = readSource("convex/schema.ts");
+    const numbers = readSource("convex/numbers.ts");
+    const catalog = readSource("convex/catalog.ts");
+    const offers = readSource("convex/offers.ts");
+    const seed = readSource("convex/seed.ts");
+
+    expect(schema).toContain("masterProductCode: v.optional(v.string())");
+    expect(schema).toContain("packTypes: v.optional(v.array(v.string()))");
+    expect(schema).toContain("defaultUnit: v.optional(v.string())");
+    expect(schema).toContain('v.literal("active"), v.literal("deprecated")');
+    expect(schema).toContain('index("by_master_product_code"');
+    expect(schema).toContain("packTypePricing: v.optional(");
+    expect(schema).toContain("supplierCostSar: v.number()");
+    expect(schema).toContain("fulfillmentMode: v.optional(v.union(v.literal(\"express\"), v.literal(\"market\")))");
+
+    expect(numbers).toContain("generateMasterProductCode");
+    expect(numbers).toContain("MWRD-PROD-");
+    expect(numbers).toContain('padStart(5, "0")');
+
+    const create = exportedBlock(catalog, "createProduct");
+    expect(create).toContain("nextMasterProductCode");
+    expect(create).toContain("Master product code already exists.");
+    expect(create).toContain("masterProductCode");
+
+    const backfill = exportedBlock(catalog, "backfillMasterProductCodes");
+    expect(backfill).toContain("generateMasterProductCode");
+
+    const upsertOffer = exportedBlock(offers, "upsertSupplierOffer");
+    expect(upsertOffer).toContain("packTypePricing");
+    expect(upsertOffer).toContain("is not allowed for this product.");
+    expect(upsertOffer).toContain("listed twice in pricing.");
+    expect(upsertOffer).toContain("Default pack type must appear in pack type pricing entries.");
+
+    expect(seed).toContain("MWRD-PROD-");
+    expect(seed).toContain('packTypes: ["Each"]');
+  });
+
+  it("keeps DN/GRN/Invoice + three-way-match wired with 2% tolerance", () => {
+    const schema = readSource("convex/schema.ts");
+    const documents = readSource("convex/documents.ts");
+    const numbers = readSource("convex/numbers.ts");
+    const backofficeRouter = readSource("src/routes/backoffice-router.tsx");
+    const adminNav = readSource("src/features/admin/hooks/use-admin-nav.tsx");
+
+    [
+      "deliveryNotes: defineTable",
+      "deliveryNoteItems: defineTable",
+      "goodsReceiptNotes: defineTable",
+      "goodsReceiptNoteItems: defineTable",
+      "invoices: defineTable",
+      "invoiceVarianceSummaries: defineTable",
+      'index("by_cpo"',
+      'index("by_delivery_note"',
+      'index("by_grn"',
+      'index("by_within_tolerance"'
+    ].forEach((needle) => expect(schema).toContain(needle));
+
+    expect(numbers).toContain("MWRD-DN-");
+    expect(numbers).toContain("MWRD-GRN-");
+    expect(numbers).toContain("MWRD-INV-");
+
+    expect(documents).toContain("VARIANCE_TOLERANCE_PCT = 2");
+    expect(documents).toContain("VAT_RATE = 0.15");
+    expect(documents).toContain("runThreeWayMatch");
+
+    const createDn = exportedBlock(documents, "createDeliveryNote");
+    expect(createDn).toContain('assertHasPermission(actor, "order:update_status")');
+    expect(createDn).toContain("Pass the SPO id.");
+    expect(createDn).toContain("DN can only be created for an SPO that has been dispatched.");
+
+    const confirmGrn = exportedBlock(documents, "confirmGoodsReceipt");
+    expect(confirmGrn).toContain('assertHasPermission(actor, "delivery:confirm")');
+    expect(confirmGrn).toContain("This delivery note has already been receipted.");
+
+    const issueInv = exportedBlock(documents, "issueInvoice");
+    expect(issueInv).toContain("runThreeWayMatch");
+    expect(issueInv).toContain('"issued" | "onHold"');
+    expect(issueInv).toContain("invoice.held");
+    expect(issueInv).toContain("invoice.issued");
+
+    const decide = exportedBlock(documents, "decideInvoiceVariance");
+    expect(decide).toContain("Only on-hold invoices can be decided.");
+    expect(decide).toContain("invoice.variance_approved");
+    expect(decide).toContain("invoice.variance_rejected");
+
+    const pay = exportedBlock(documents, "recordInvoicePayment");
+    expect(pay).toContain("invoice.paid");
+
+    const onHold = exportedBlock(documents, "listInvoicesOnHold");
+    expect(onHold).toContain('assertHasPermission(actor, "po:approve")');
+    expect(onHold).toContain('withIndex("by_status_updated_at"');
+
+    expect(backofficeRouter).toContain('path: "three-way-match"');
+    expect(backofficeRouter).toContain("AdminThreeWayMatchPage");
+    expect(adminNav).toContain('"/admin/three-way-match"');
+  });
+
   it("keeps the dual-PO model (CPO + SPO + transactionRef) wired", () => {
     const schema = readSource("convex/schema.ts");
     const purchaseOrders = readSource("convex/purchaseOrders.ts");

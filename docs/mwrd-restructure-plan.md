@@ -59,8 +59,8 @@ Feature restructure slices:
 - **Slice 15 — backoffice auth split: idle timeout + cross-portal sign-in refusal.** *Implemented.*
 - **Slice 16 — Approval Tree (`approvalNodes` + cycle detection + per-step `approvalTasks`).** *Implemented.*
 - **Slice 17 — Dual PO (CPO + SPO + `transactionRef`).** *Implemented.*
-- Slice 18 — DN + GRN + Invoice + three-way match.
-- Slice 19 — pack-type repeater + master product code + numbering generators.
+- **Slice 18 — DN + GRN + Invoice + three-way match.** *Implemented.*
+- **Slice 19 — pack-type repeater + master product code + numbering generators.** *Implemented.*
 - Slice 20 — address book.
 - Slice 21 — Bundles (Essentials Packs).
 - Slice 22 — Company Catalogs.

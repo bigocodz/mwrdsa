@@ -1,4 +1,4 @@
-import { Activity, BarChart3, Building2, ClipboardCheck, LayoutDashboard, PackageCheck, PackageSearch, PhoneCall, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Activity, BarChart3, Building2, ClipboardCheck, LayoutDashboard, PackageCheck, PackageSearch, PhoneCall, Scale, ShieldAlert, ShieldCheck, UsersRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
@@ -9,6 +9,7 @@ export function useAdminNav() {
   const canViewReports = Boolean(user && hasPermission(user.roles, "analytics:view"));
   const canManageCatalog = Boolean(user && hasPermission(user.roles, "catalog:manage"));
   const canReviewOnboarding = Boolean(user && hasPermission(user.roles, "audit:view"));
+  const canApprovePo = Boolean(user && hasPermission(user.roles, "po:approve"));
 
   const items = [
     { label: t("navigation.dashboard"), href: "/admin/dashboard", icon: <LayoutDashboard className="size-4" /> }
@@ -30,11 +31,19 @@ export function useAdminNav() {
     items.push({ label: t("navigation.offers"), href: "/admin/offers", icon: <PackageCheck className="size-4" /> });
   }
 
+  if (canApprovePo) {
+    items.push({ label: t("navigation.three_way_match"), href: "/admin/three-way-match", icon: <Scale className="size-4" /> });
+  }
+
   if (canViewReports) {
     items.push({ label: t("navigation.reports"), href: "/admin/reports", icon: <BarChart3 className="size-4" /> });
   }
 
   items.push({ label: t("navigation.audit"), href: "/admin/audit", icon: <ClipboardCheck className="size-4" /> });
+
+  if (Boolean(user && hasPermission(user.roles, "superAdmin:manage"))) {
+    items.push({ label: t("navigation.internal_users"), href: "/admin/internal-users", icon: <UsersRound className="size-4" /> });
+  }
 
   return items;
 }

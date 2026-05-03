@@ -31,7 +31,8 @@ type Permission =
   | "order:update_status"
   | "delivery:confirm"
   | "audit:view"
-  | "analytics:view";
+  | "analytics:view"
+  | "superAdmin:manage";
 
 type UserLike = {
   roles: Role[];
@@ -40,7 +41,7 @@ type UserLike = {
 };
 
 const rolePermissionMatrix = {
-  superAdmin: ["organization:create", "organization:update", "user:invite", "catalog:manage", "rfq:create", "rfq:submit", "rfq:operations", "po:approve", "quote:submit", "quote:apply_margin", "quote:release", "order:update_status", "delivery:confirm", "audit:view", "analytics:view"],
+  superAdmin: ["organization:create", "organization:update", "user:invite", "catalog:manage", "rfq:create", "rfq:submit", "rfq:operations", "po:approve", "quote:submit", "quote:apply_margin", "quote:release", "order:update_status", "delivery:confirm", "audit:view", "analytics:view", "superAdmin:manage"],
   operationsManager: ["organization:update", "rfq:submit", "rfq:operations", "audit:view", "analytics:view"],
   pricingAnalyst: ["quote:apply_margin", "quote:release", "rfq:operations", "audit:view", "analytics:view"],
   accountManager: ["organization:create", "organization:update", "user:invite", "rfq:operations", "audit:view"],

@@ -25,7 +25,7 @@ This checklist tracks product/workflow compliance inside the current Convex/Vite
 - [x] Supplier product addition request flow.
 - [x] Admin supplier-offer approval queue.
 - [x] Admin product-addition request queue.
-- [ ] Pack-type catalog governance beyond free-text pack labels.
+- [x] Pack-type catalog governance beyond free-text pack labels.
 - [ ] 200-300 realistic seeded master products.
 
 ## RFQ And Quote Flow
@@ -57,10 +57,10 @@ This checklist tracks product/workflow compliance inside the current Convex/Vite
 - [x] Supplier order status tracking.
 - [x] Client receipt confirmation and disputes.
 - [x] Client CPO and supplier SPO split with transaction reference.
-- [ ] Delivery notes.
-- [ ] Goods receipt notes.
-- [ ] Invoices.
-- [ ] Three-way match queue.
+- [x] Delivery notes.
+- [x] Goods receipt notes.
+- [x] Invoices.
+- [x] Three-way match queue.
 - [ ] PDF rendering stubs for CPO/SPO/DN/GRN/INV.
 - [x] Moyasar payment stub interface.
 - [x] Storage download URL interface.

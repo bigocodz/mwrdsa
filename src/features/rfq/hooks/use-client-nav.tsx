@@ -1,4 +1,4 @@
-import { BarChart3, FileText, GitCompareArrows, LayoutDashboard, PackageSearch, ShoppingBag, Workflow } from "lucide-react";
+import { BarChart3, BookMarked, FileText, GitCompareArrows, LayoutDashboard, MapPin, Package, PackageSearch, ShoppingBag, Workflow } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
@@ -22,7 +22,12 @@ export function useClientNav() {
   }
 
   if (canManageAccount) {
-    items.push({ label: t("navigation.approval_tree"), href: "/client/account/approval-tree", icon: <Workflow className="size-4" /> });
+    items.push(
+      { label: t("navigation.approval_tree"), href: "/client/account/approval-tree", icon: <Workflow className="size-4" /> },
+      { label: t("navigation.address_book"), href: "/client/account/addresses", icon: <MapPin className="size-4" /> },
+      { label: t("navigation.bundles"), href: "/client/account/bundles", icon: <Package className="size-4" /> },
+      { label: t("navigation.company_catalogs"), href: "/client/account/company-catalogs", icon: <BookMarked className="size-4" /> }
+    );
   }
 
   return items;

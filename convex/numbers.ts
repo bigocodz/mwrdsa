@@ -26,3 +26,22 @@ export function generateCpoNumber(timestamp = Date.now()) {
 export function generateSpoNumber(timestamp = Date.now()) {
   return `MWRD-SPO-${dateKey(timestamp)}-${paddedRandom()}`;
 }
+
+export function generateDeliveryNoteNumber(timestamp = Date.now()) {
+  return `MWRD-DN-${dateKey(timestamp)}-${paddedRandom()}`;
+}
+
+export function generateGoodsReceiptNumber(timestamp = Date.now()) {
+  return `MWRD-GRN-${dateKey(timestamp)}-${paddedRandom()}`;
+}
+
+export function generateInvoiceNumber(timestamp = Date.now()) {
+  return `MWRD-INV-${dateKey(timestamp)}-${paddedRandom()}`;
+}
+
+export function generateMasterProductCode(sequence: number) {
+  if (!Number.isFinite(sequence) || sequence < 0) {
+    throw new Error("Sequence must be a non-negative number.");
+  }
+  return `MWRD-PROD-${String(sequence).padStart(5, "0")}`;
+}

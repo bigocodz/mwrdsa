@@ -1,5 +1,8 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { ClientApprovalTreePage } from "@/features/account/pages/client-approval-tree-page";
+import { ClientAddressBookPage } from "@/features/account/pages/client-address-book-page";
+import { ClientBundlesPage } from "@/features/account/pages/client-bundles-page";
+import { ClientCompanyCatalogsPage } from "@/features/account/pages/client-company-catalogs-page";
 import { ClientCatalogPage } from "@/features/catalog/pages/client-catalog-page";
 import { ClientOrderDetailPage } from "@/features/orders/pages/client-order-detail-page";
 import { ClientOrdersPage } from "@/features/orders/pages/client-orders-page";
@@ -45,7 +48,12 @@ export const clientRouter = createBrowserRouter([
       { path: "orders/po/:purchaseOrderId", element: <ClientPurchaseOrderPage /> },
       { path: "orders/:orderId", element: <ClientOrderDetailPage /> },
       { path: "reports", element: <ClientReportsPage /> },
-      { path: "account/approval-tree", element: <ClientApprovalTreePage /> }
+      // Account & settings (Slices 16, 20, 21, 22)
+      { path: "account/approval-tree", element: <ClientApprovalTreePage /> },
+      { path: "account/addresses", element: <ClientAddressBookPage /> },
+      { path: "account/bundles", element: <ClientBundlesPage /> },
+      { path: "account/company-catalogs", element: <ClientCompanyCatalogsPage /> },
+      { path: "account/company-catalogs/:companyCatalogId", element: <ClientCompanyCatalogsPage /> }
     ]
   },
   { path: "*", element: <NotFoundPage /> }

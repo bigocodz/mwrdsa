@@ -269,6 +269,8 @@ async function loadRecentOperationsRfqs(ctx: QueryCtx, limit: number) {
 export const createRfq = mutation({
   args: {
     actorUserId: v.id("users"),
+    source: v.optional(v.union(v.literal("catalog"), v.literal("nonCatalog"), v.literal("companyCatalog"), v.literal("bundle"), v.literal("repeat"))),
+    deliveryAddressId: v.optional(v.id("addresses")),
     requiredDeliveryDate: v.optional(v.string()),
     department: v.optional(v.string()),
     branch: v.optional(v.string()),
@@ -296,6 +298,8 @@ export const createRfq = mutation({
       clientOrganizationId,
       createdByUserId: args.actorUserId,
       status: "draft",
+      source: args.source,
+      deliveryAddressId: args.deliveryAddressId,
       requiredDeliveryDate: cleanOptionalText(args.requiredDeliveryDate),
       department: cleanOptionalText(args.department),
       branch: cleanOptionalText(args.branch),

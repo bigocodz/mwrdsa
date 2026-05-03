@@ -202,6 +202,40 @@ Status: implemented.
 - `pnpm dev:client | dev:supplier | dev:backoffice` on ports 5173/5174/5175. `pnpm build` builds all three into `dist/{client,supplier,backoffice}/`.
 - Added isolation contract test that fails if a foreign portal's pages leak into another bundle's router.
 
+## Slice 19 — Master product codes + pack-type repeater
+
+Status: implemented.
+
+- Schema: added optional `masterProductCode`, `packTypes` (array of strings), `defaultUnit`, and `lifecycleStatus` (`active | deprecated`) on `products`. New index `by_master_product_code`.
+- `supplierOffers` gained optional `packTypePricing` (`{ packType, supplierCostSar, minOrderQuantity }[]`) and `fulfillmentMode` (`express | market`). Legacy single-pack `packType` + `unitCost` + `minOrderQuantity` stay for back-compat — UIs can keep submitting either shape until a future pack-type-only migration.
+- New numbering helper [convex/numbers.ts](convex/numbers.ts) → `generateMasterProductCode(seq)` returns `MWRD-PROD-NNNNN` (5-digit padded).
+- [convex/catalog.ts](convex/catalog.ts):
+  - `createProduct` accepts `masterProductCode`, `packTypes`, `defaultUnit`, normalizes pack types (trim + de-dupe), refuses an explicit code that already exists, and auto-generates one from the row count when omitted. Marks `lifecycleStatus='active'` on creation.
+  - New `backfillMasterProductCodes` internal mutation walks products by `createdAt` and assigns codes / lifecycle to legacy rows missing them.
+- [convex/offers.ts](convex/offers.ts):
+  - `upsertSupplierOffer` now accepts a `packTypePricing` array and `fulfillmentMode`. Each entry's pack type must be present in the product's `packTypes` allowlist (when defined), no duplicates, and the default `packType` arg must appear in the pricing entries. Legacy single-pack mode still works when `packTypePricing` is omitted.
+- Seed: demo `upsertProduct` and load-test `ensureProduct` now stamp `packTypes`, `defaultUnit`, `lifecycleStatus`, and stable `MWRD-PROD-NNNNN` codes.
+- Contract test asserts the schema additions, the numbering helper, the create/backfill paths, and the offer pricing validation guards.
+
+## Slice 18 — Delivery Notes, Goods Receipts, Invoices, three-way match
+
+Status: implemented.
+
+- Schema: six new tables — `deliveryNotes`, `deliveryNoteItems`, `goodsReceiptNotes`, `goodsReceiptNoteItems`, `invoices`, `invoiceVarianceSummaries`. All cross-linked by `cpoId` / `spoId` / `transactionRef`. The variance summary precomputes PO/GRN/Invoice totals and `withinTolerance` so the three-way-match queue is an indexed read, not a recompute.
+- New numbering helpers: `generateDeliveryNoteNumber`, `generateGoodsReceiptNumber`, `generateInvoiceNumber` returning `MWRD-DN-…` / `MWRD-GRN-…` / `MWRD-INV-…`.
+- New module [convex/documents.ts](convex/documents.ts):
+  - `runThreeWayMatch(cpoId, grnId, invoiceTotalSar)` computes PO total (from awarded quote line items), GRN total (qty received × unit price), invoice total. Returns the worst variance and `withinTolerance` against the **2 % tolerance**.
+  - `createDeliveryNote` (gate `order:update_status`): supplier-only, refuses CPO ids, refuses SPOs not in `sentToSupplier`, audit-logged, notifies the client.
+  - `confirmGoodsReceipt` (gate `delivery:confirm`): client-only, one GRN per DN, accepts per-line `condition` of `ok | damaged | short`.
+  - `issueInvoice` (gate `po:approve`): VAT 15 % computed server-side, runs the three-way match, sets `status='issued'` if within tolerance else `status='onHold'` with `holdReason`. Always writes a `invoiceVarianceSummaries` row. Audit logged with `invoice.issued` / `invoice.held`.
+  - `decideInvoiceVariance` (gate `po:approve`): admin override path. `approved` → invoice → `issued` (with override note); `rejected` → invoice → `cancelled` with mandatory note. Updates the variance summary with reviewer + note + decision time.
+  - `recordInvoicePayment` (gate `po:approve`): flips invoice → `paid`, persists the Moyasar `paymentIntentId` from slice 12.
+  - `listInvoicesOnHold` (gate `po:approve`): indexed by `by_status_updated_at`, joins variance summary + client anonymous id for the queue UI.
+- Admin UI: new page [admin-three-way-match-page.tsx](src/features/admin/pages/admin-three-way-match-page.tsx) at `/admin/three-way-match`. Per-row Review opens a decision card showing PO / GRN / Invoice / Subtotal / VAT, with reviewer note and Override-Approve / Reject actions. Linked from `useAdminNav` under `po:approve`.
+- i18n: added `navigation.three_way_match` in EN + AR.
+- Seed: demo CPO now ships with a paired DN, GRN, and a clean within-tolerance Invoice + variance summary, so the three-way match queue starts empty but the data is shaped end-to-end.
+- Contract test asserts the schema additions, the numbering helpers, the variance constants, the per-mutation permission gates and error messages, and the new admin route + nav.
+
 ## Slice 17 — Dual PO (CPO + SPO + transactionRef)
 
 Status: implemented.

@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
-import { mutation, query, type QueryCtx } from "./_generated/server";
+import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
+import { generateMasterProductCode } from "./numbers";
 import { assertActiveUser, assertHasAnyPermission, assertHasPermission } from "./rbac";
 
 const ADMIN_CATALOG_LIST_LIMIT = 500;
@@ -113,11 +114,26 @@ export const createCategory = mutation({
   }
 });
 
+async function nextMasterProductCode(ctx: MutationCtx) {
+  const total = await ctx.db.query("products").collect();
+  return generateMasterProductCode(total.length + 1);
+}
+
+function normalizePackTypes(input?: readonly string[]) {
+  if (!input || input.length === 0) return undefined;
+  const cleaned = input.map((value) => value.trim()).filter((value) => value.length > 0);
+  if (cleaned.length === 0) return undefined;
+  return Array.from(new Set(cleaned));
+}
+
 export const createProduct = mutation({
   args: {
     actorUserId: v.id("users"),
     categoryId: v.id("categories"),
     sku: v.string(),
+    masterProductCode: v.optional(v.string()),
+    packTypes: v.optional(v.array(v.string())),
+    defaultUnit: v.optional(v.string()),
     nameAr: v.string(),
     nameEn: v.string(),
     descriptionAr: v.optional(v.string()),
@@ -141,10 +157,27 @@ export const createProduct = mutation({
       throw new Error("Active category is required.");
     }
 
+    let masterProductCode = args.masterProductCode?.trim();
+    if (masterProductCode) {
+      const conflict = await ctx.db
+        .query("products")
+        .withIndex("by_master_product_code", (q) => q.eq("masterProductCode", masterProductCode))
+        .first();
+      if (conflict) {
+        throw new Error("Master product code already exists.");
+      }
+    } else {
+      masterProductCode = await nextMasterProductCode(ctx);
+    }
+
     const now = Date.now();
     const productId = await ctx.db.insert("products", {
       categoryId: args.categoryId,
       sku,
+      masterProductCode,
+      packTypes: normalizePackTypes(args.packTypes),
+      defaultUnit: cleanOptionalText(args.defaultUnit),
+      lifecycleStatus: "active",
       nameAr: args.nameAr.trim(),
       nameEn: args.nameEn.trim(),
       descriptionAr: cleanOptionalText(args.descriptionAr),
@@ -161,11 +194,32 @@ export const createProduct = mutation({
       action: "catalog.product.created",
       entityType: "product",
       entityId: productId,
-      summary: `Created catalog product ${sku}`,
+      summary: `Created catalog product ${sku} (${masterProductCode})`,
       createdAt: now
     });
 
     return productId;
+  }
+});
+
+export const backfillMasterProductCodes = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const products = await ctx.db.query("products").collect();
+    products.sort((a, b) => a.createdAt - b.createdAt);
+    let assigned = 0;
+    let sequence = 0;
+    for (const product of products) {
+      sequence++;
+      if (product.masterProductCode) continue;
+      await ctx.db.patch(product._id, {
+        masterProductCode: generateMasterProductCode(sequence),
+        lifecycleStatus: product.lifecycleStatus ?? "active",
+        updatedAt: Date.now()
+      });
+      assigned++;
+    }
+    return { assigned };
   }
 });
 

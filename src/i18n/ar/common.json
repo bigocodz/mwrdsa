@@ -21,7 +21,12 @@
     "clients": "العملاء",
     "suppliers": "الموردون",
     "audit": "التدقيق",
-    "approval_tree": "سلسلة الموافقات"
+    "approval_tree": "سلسلة الموافقات",
+    "three_way_match": "المطابقة الثلاثية",
+    "address_book": "دفتر العناوين",
+    "bundles": "حزم الأساسيات",
+    "company_catalogs": "كتالوجات الشركة",
+    "internal_users": "المستخدمون الداخليون"
   },
   "client": {
     "title": "بوابة العميل",

@@ -51,4 +51,5 @@ export type Permission =
   | "order:update_status"
   | "delivery:confirm"
   | "audit:view"
-  | "analytics:view";
+  | "analytics:view"
+  | "superAdmin:manage";
