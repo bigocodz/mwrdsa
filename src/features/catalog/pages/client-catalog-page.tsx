@@ -1,5 +1,5 @@
-import { useQuery } from "convex/react";
-import { Check, PackageSearch, Plus } from "lucide-react";
+import { usePaginatedQuery } from "convex/react";
+import { Check, Loader2, PackageSearch, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -26,12 +26,20 @@ export function ClientCatalogPage() {
   const navigate = useNavigate();
   const cart = useRfqCart();
   const [searchValue, setSearchValue] = useState("");
-  const products = useQuery(api.catalog.listVisibleProducts, isBetterAuthConfigured && user ? { actorUserId: user.id as Id<"users"> } : "skip");
+  const queryArgs = useMemo(() => (isBetterAuthConfigured && user ? { actorUserId: user.id as Id<"users"> } : "skip"), [user]);
+  const {
+    results: products,
+    status: productStatus,
+    loadMore: loadMoreProducts
+  } = usePaginatedQuery(api.catalog.listVisibleProductsPaginated, queryArgs, { initialNumItems: 60 });
   const language = i18n.language;
   const cartProductIds = useMemo(() => new Set(cart.items.map((item) => item.productId).filter(Boolean) as Id<"products">[]), [cart.items]);
+  const isLoadingProducts = productStatus === "LoadingFirstPage";
+  const canLoadMoreProducts = productStatus === "CanLoadMore";
+  const isLoadingMoreProducts = productStatus === "LoadingMore";
   const productRows = useMemo(() => {
     const normalizedSearch = searchValue.trim().toLowerCase();
-    const source = products ?? [];
+    const source = products;
 
     if (!normalizedSearch) {
       return source;
@@ -41,8 +49,8 @@ export function ClientCatalogPage() {
       return [product.sku, product.nameAr, product.nameEn, product.specificationsAr, product.specificationsEn, product.category.nameAr, product.category.nameEn].some((value) => value?.toLowerCase().includes(normalizedSearch));
     });
   }, [products, searchValue]);
-  const categoryCount = new Set((products ?? []).map((product) => product.category._id)).size;
-  const bilingualCount = (products ?? []).filter((product) => product.nameAr && product.nameEn).length;
+  const categoryCount = new Set(products.map((product) => product.category._id)).size;
+  const bilingualCount = products.filter((product) => product.nameAr && product.nameEn).length;
 
   return (
     <PortalShell
@@ -56,7 +64,7 @@ export function ClientCatalogPage() {
       <StatStrip
         stats={[
           { label: localize({ en: "Catalog groups", ar: "مجموعات الكتالوج" }, language), value: String(categoryCount), detail: t("catalog:no_prices") },
-          { label: localize({ en: "Ready for RFQ", ar: "جاهز لطلب التسعير" }, language), value: String(products?.length ?? 0), detail: localize({ en: "Client-visible catalog items", ar: "بنود كتالوج ظاهرة للعميل" }, language), trendTone: "positive" },
+          { label: localize({ en: "Ready for RFQ", ar: "جاهز لطلب التسعير" }, language), value: String(products.length), detail: localize({ en: "Loaded client-visible items", ar: "بنود ظاهرة محملة للعميل" }, language), trendTone: "positive" },
           { label: localize({ en: "Bilingual items", ar: "بنود ثنائية اللغة" }, language), value: String(bilingualCount), detail: localize({ en: "Arabic and English names", ar: "أسماء عربية وإنجليزية" }, language), trendTone: "neutral" },
           { label: localize({ en: "Public prices", ar: "أسعار عامة" }, language), value: "0", detail: localize({ en: "Quotes are priced after RFQ", ar: "يتم التسعير بعد طلب التسعير" }, language) }
         ]}
@@ -69,69 +77,79 @@ export function ClientCatalogPage() {
       />
 
       {productRows.length > 0 ? (
-        <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {productRows.map((product) => (
-            <article key={product._id} className="flex min-h-[21rem] flex-col overflow-hidden rounded-lg border border-border/70 bg-card shadow-card">
-              <div className="flex items-center justify-between px-5 pt-5">
-                <span className="h-1.5 w-8 rounded-full bg-muted-foreground/40" />
-                <span className="text-xs font-semibold text-muted-foreground">{product.sku}</span>
-              </div>
-              <div className="mx-5 mt-3 grid flex-1 place-items-center rounded-lg bg-muted/55 p-8">
-                <span className="grid size-24 place-items-center rounded-full bg-card text-primary shadow-card">
-                  <PackageSearch className="size-12" aria-hidden="true" />
-                </span>
-              </div>
-              <div className="flex flex-col gap-4 p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h2 className="truncate text-lg font-semibold">{localizePair(product.nameAr, product.nameEn, language)}</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">{localizePair(product.specificationsAr ?? product.descriptionAr, product.specificationsEn ?? product.descriptionEn, language)}</p>
+        <div className="flex flex-col gap-5">
+          <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {productRows.map((product) => (
+              <article key={product._id} className="flex min-h-[21rem] flex-col overflow-hidden rounded-lg border border-border/70 bg-card shadow-card">
+                <div className="flex items-center justify-between px-5 pt-5">
+                  <span className="h-1.5 w-8 rounded-full bg-muted-foreground/40" />
+                  <span className="text-xs font-semibold text-muted-foreground">{product.sku}</span>
+                </div>
+                <div className="mx-5 mt-3 grid flex-1 place-items-center rounded-lg bg-muted/55 p-8">
+                  <span className="grid size-24 place-items-center rounded-full bg-card text-primary shadow-card">
+                    <PackageSearch className="size-12" aria-hidden="true" />
+                  </span>
+                </div>
+                <div className="flex flex-col gap-4 p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h2 className="truncate text-lg font-semibold">{localizePair(product.nameAr, product.nameEn, language)}</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">{localizePair(product.specificationsAr ?? product.descriptionAr, product.specificationsEn ?? product.descriptionEn, language)}</p>
+                    </div>
+                    <Badge variant="info">{localizePair(product.category.nameAr, product.category.nameEn, language)}</Badge>
                   </div>
-                  <Badge variant="info">{localizePair(product.category.nameAr, product.category.nameEn, language)}</Badge>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm text-muted-foreground">{t("catalog:no_prices")}</span>
+                  </div>
+                  {cartProductIds.has(product._id) ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => cart.removeItem(product._id)}
+                    >
+                      <Check className="size-4" aria-hidden="true" />
+                      {localize({ en: "Added — remove", ar: "تمت الإضافة — حذف" }, language)}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() =>
+                        cart.addItem({
+                          productId: product._id,
+                          sku: product.sku,
+                          nameAr: product.nameAr,
+                          nameEn: product.nameEn,
+                          specificationsAr: product.specificationsAr,
+                          specificationsEn: product.specificationsEn
+                        })
+                      }
+                    >
+                      <Plus className="size-4" aria-hidden="true" />
+                      {t("catalog:add_to_rfq")}
+                    </Button>
+                  )}
                 </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-muted-foreground">{t("catalog:no_prices")}</span>
-                </div>
-                {cartProductIds.has(product._id) ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => cart.removeItem(product._id)}
-                  >
-                    <Check className="size-4" aria-hidden="true" />
-                    {localize({ en: "Added — remove", ar: "تمت الإضافة — حذف" }, language)}
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() =>
-                      cart.addItem({
-                        productId: product._id,
-                        sku: product.sku,
-                        nameAr: product.nameAr,
-                        nameEn: product.nameEn,
-                        specificationsAr: product.specificationsAr,
-                        specificationsEn: product.specificationsEn
-                      })
-                    }
-                  >
-                    <Plus className="size-4" aria-hidden="true" />
-                    {t("catalog:add_to_rfq")}
-                  </Button>
-                )}
-              </div>
-            </article>
-          ))}
-        </section>
+              </article>
+            ))}
+          </section>
+          {canLoadMoreProducts || isLoadingMoreProducts ? (
+            <div className="flex justify-center">
+              <Button type="button" variant="outline" disabled={isLoadingMoreProducts} onClick={() => loadMoreProducts(60)}>
+                {isLoadingMoreProducts ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <PackageSearch className="size-4" aria-hidden="true" />}
+                {localize({ en: "Load more products", ar: "تحميل المزيد من المنتجات" }, language)}
+              </Button>
+            </div>
+          ) : null}
+        </div>
       ) : (
         <section className="grid min-h-72 place-items-center rounded-lg border border-dashed border-border/80 bg-card p-8 text-center shadow-card">
           <div className="flex max-w-md flex-col items-center gap-3">
             <span className="grid size-14 place-items-center rounded-full bg-primary/10 text-primary">
               <PackageSearch className="size-7" aria-hidden="true" />
             </span>
-            <h2 className="text-lg font-semibold">{products === undefined ? localize({ en: "Loading catalog...", ar: "جار تحميل الكتالوج..." }, language) : t("catalog:empty")}</h2>
+            <h2 className="text-lg font-semibold">{isLoadingProducts ? localize({ en: "Loading catalog...", ar: "جار تحميل الكتالوج..." }, language) : t("catalog:empty")}</h2>
             <p className="text-sm text-muted-foreground">{localize({ en: "Admin-created visible items will appear here without prices or supplier identity.", ar: "ستظهر هنا البنود التي تعتمدها الإدارة بدون أسعار أو هوية مورد." }, language)}</p>
           </div>
         </section>

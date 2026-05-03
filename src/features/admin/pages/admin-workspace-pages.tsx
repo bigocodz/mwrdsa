@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { AlertTriangle, Loader2, Send, UserPlus } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -71,8 +71,12 @@ export function AdminOperationsPage() {
   const { t, i18n } = useTranslation("common");
   const language = i18n.language;
   const { user } = useAuth();
-  const queryArgs = isBetterAuthConfigured && user ? { actorUserId: user.id as Id<"users"> } : "skip";
-  const operations = useQuery(api.rfqs.listOperationsRfqs, queryArgs);
+  const queryArgs = useMemo(() => (isBetterAuthConfigured && user ? { actorUserId: user.id as Id<"users"> } : "skip"), [user]);
+  const {
+    results: operations,
+    status: operationStatus,
+    loadMore: loadMoreOperations
+  } = usePaginatedQuery(api.rfqs.listOperationsRfqsPaginated, queryArgs, { initialNumItems: 50 });
   const suppliers = useQuery(api.rfqs.listSupplierOrgsForMatching, queryArgs);
   const assignSupplier = useMutation(api.rfqs.assignSupplierToRfq);
   const [searchValue, setSearchValue] = useState("");
@@ -82,9 +86,12 @@ export function AdminOperationsPage() {
   const [pendingAssignId, setPendingAssignId] = useState<Id<"rfqs"> | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const [reportNow] = useState(() => Date.now());
+  const isLoadingOperations = operationStatus === "LoadingFirstPage";
+  const canLoadMoreOperations = operationStatus === "CanLoadMore";
+  const isLoadingMoreOperations = operationStatus === "LoadingMore";
 
   const rows = useMemo(() => {
-    const source = operations ?? [];
+    const source = operations;
     const search = searchValue.trim().toLowerCase();
     if (!search) return source;
     return source.filter((rfq) =>
@@ -93,7 +100,7 @@ export function AdminOperationsPage() {
   }, [operations, searchValue]);
 
   const totals = useMemo(() => {
-    const source = operations ?? [];
+    const source = operations;
     return {
       active: source.length,
       pendingReview: source.filter((rfq) => rfq.status === "adminReview").length,
@@ -170,7 +177,7 @@ export function AdminOperationsPage() {
       <DashboardCard title={t("navigation.operations")}>
         <DataTable
           rows={rows}
-          emptyLabel={operations === undefined ? localize({ en: "Loading operations...", ar: "جار تحميل العمليات..." }, language) : localize({ en: "No active RFQs.", ar: "لا توجد طلبات نشطة." }, language)}
+          emptyLabel={isLoadingOperations ? localize({ en: "Loading operations...", ar: "جار تحميل العمليات..." }, language) : localize({ en: "No active RFQs.", ar: "لا توجد طلبات نشطة." }, language)}
           getRowKey={(rfq) => rfq._id}
           columns={[
             {
@@ -212,6 +219,14 @@ export function AdminOperationsPage() {
             }
           ]}
         />
+        {canLoadMoreOperations || isLoadingMoreOperations ? (
+          <div className="mt-4 flex justify-center">
+            <Button type="button" variant="outline" disabled={isLoadingMoreOperations} onClick={() => loadMoreOperations(50)}>
+              {isLoadingMoreOperations ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Send className="size-4" aria-hidden="true" />}
+              {localize({ en: "Load more RFQs", ar: "تحميل المزيد من الطلبات" }, language)}
+            </Button>
+          </div>
+        ) : null}
       </DashboardCard>
 
       {expandedId ? (

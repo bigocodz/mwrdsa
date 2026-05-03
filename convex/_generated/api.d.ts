@@ -16,6 +16,7 @@ import type * as betterAuth_index from "../betterAuth/index.js";
 import type * as catalog from "../catalog.js";
 import type * as http from "../http.js";
 import type * as notifications from "../notifications.js";
+import type * as offers from "../offers.js";
 import type * as orders from "../orders.js";
 import type * as orgs from "../orgs.js";
 import type * as purchaseOrders from "../purchaseOrders.js";
@@ -40,6 +41,7 @@ declare const fullApi: ApiFromModules<{
   catalog: typeof catalog;
   http: typeof http;
   notifications: typeof notifications;
+  offers: typeof offers;
   orders: typeof orders;
   orgs: typeof orgs;
   purchaseOrders: typeof purchaseOrders;

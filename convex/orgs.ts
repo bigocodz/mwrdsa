@@ -7,6 +7,8 @@ const anonymousPrefixes = {
   supplier: "SUP"
 } as const;
 
+const ADMIN_ORGANIZATION_LIST_LIMIT = 500;
+
 function createAnonymousId(prefix: "CLT" | "SUP") {
   const value = Math.floor(Math.random() * 100000)
     .toString()
@@ -65,9 +67,9 @@ export const listOrganizationsForAdmin = query({
         .query("organizations")
         .withIndex("by_type", (q) => q.eq("type", organizationType))
         .order("desc")
-        .collect();
+        .take(ADMIN_ORGANIZATION_LIST_LIMIT);
     }
 
-    return await ctx.db.query("organizations").order("desc").collect();
+    return await ctx.db.query("organizations").order("desc").take(ADMIN_ORGANIZATION_LIST_LIMIT);
   }
 });

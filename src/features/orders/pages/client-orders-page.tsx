@@ -1,5 +1,5 @@
-import { useQuery } from "convex/react";
-import { FileText, Truck } from "lucide-react";
+import { usePaginatedQuery } from "convex/react";
+import { FileText, Loader2, Truck } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
@@ -8,6 +8,7 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import { PortalShell } from "@/components/portal-shell";
 import { DashboardCard, DashboardToolbar, DataTable, StatStrip, StatusBadge } from "@/components/portal-ui";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { localize } from "@/features/rfq/data/client-workflow-data";
 import { useClientNav } from "@/features/rfq/hooks/use-client-nav";
 import { useAuth } from "@/lib/auth";
@@ -67,20 +68,34 @@ export function ClientOrdersPage() {
   const navItems = useClientNav();
   const { user } = useAuth();
   const language = i18n.language;
-  const queryArgs = isBetterAuthConfigured && user ? { actorUserId: user.id as Id<"users"> } : "skip";
-  const purchaseOrders = useQuery(api.purchaseOrders.listPurchaseOrdersForActor, queryArgs);
-  const orders = useQuery(api.orders.listOrdersForClientActor, queryArgs);
+  const queryArgs = useMemo(() => (isBetterAuthConfigured && user ? { actorUserId: user.id as Id<"users"> } : "skip"), [user]);
+  const {
+    results: purchaseOrders,
+    status: purchaseOrderStatus,
+    loadMore: loadMorePurchaseOrders
+  } = usePaginatedQuery(api.purchaseOrders.listPurchaseOrdersForActorPaginated, queryArgs, { initialNumItems: 40 });
+  const {
+    results: orders,
+    status: orderStatusResult,
+    loadMore: loadMoreOrders
+  } = usePaginatedQuery(api.orders.listOrdersForClientActorPaginated, queryArgs, { initialNumItems: 40 });
   const [searchValue, setSearchValue] = useState("");
+  const isLoadingPurchaseOrders = purchaseOrderStatus === "LoadingFirstPage";
+  const canLoadMorePurchaseOrders = purchaseOrderStatus === "CanLoadMore";
+  const isLoadingMorePurchaseOrders = purchaseOrderStatus === "LoadingMore";
+  const isLoadingOrders = orderStatusResult === "LoadingFirstPage";
+  const canLoadMoreOrders = orderStatusResult === "CanLoadMore";
+  const isLoadingMoreOrders = orderStatusResult === "LoadingMore";
 
   const orderRows = useMemo(() => {
-    const source = orders ?? [];
+    const source = orders;
     const search = searchValue.trim().toLowerCase();
     if (!search) return source;
     return source.filter((order) => [order._id, order.supplierAnonymousId, order.status].some((value) => value?.toString().toLowerCase().includes(search)));
   }, [orders, searchValue]);
 
   const totals = useMemo(() => {
-    const source = orders ?? [];
+    const source = orders;
     return {
       active: source.filter((order) => !["completed", "receiptConfirmed"].includes(order.status)).length,
       pendingReceipt: source.filter((order) => order.status === "delivered").length,
@@ -111,8 +126,8 @@ export function ClientOrdersPage() {
         description={localize({ en: "Generated from selected quotes — approve to send to the supplier.", ar: "تُنشأ من العروض المختارة — اعتمد لإرسالها للمورد." }, language)}
       >
         <DataTable
-          rows={purchaseOrders ?? []}
-          emptyLabel={purchaseOrders === undefined ? localize({ en: "Loading purchase orders...", ar: "جار تحميل أوامر الشراء..." }, language) : localize({ en: "No purchase orders yet.", ar: "لا توجد أوامر شراء بعد." }, language)}
+          rows={purchaseOrders}
+          emptyLabel={isLoadingPurchaseOrders ? localize({ en: "Loading purchase orders...", ar: "جار تحميل أوامر الشراء..." }, language) : localize({ en: "No purchase orders yet.", ar: "لا توجد أوامر شراء بعد." }, language)}
           getRowKey={(po) => po._id}
           columns={[
             {
@@ -138,12 +153,20 @@ export function ClientOrdersPage() {
             }
           ]}
         />
+        {canLoadMorePurchaseOrders || isLoadingMorePurchaseOrders ? (
+          <div className="mt-4 flex justify-center">
+            <Button type="button" variant="outline" disabled={isLoadingMorePurchaseOrders} onClick={() => loadMorePurchaseOrders(40)}>
+              {isLoadingMorePurchaseOrders ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <FileText className="size-4" aria-hidden="true" />}
+              {localize({ en: "Load more purchase orders", ar: "تحميل المزيد من أوامر الشراء" }, language)}
+            </Button>
+          </div>
+        ) : null}
       </DashboardCard>
 
       <DashboardCard title={localize({ en: "Order tracking", ar: "متابعة الطلبات" }, language)} description={localize({ en: "Confirm receipt or open a dispute from the order detail.", ar: "أكد الاستلام أو افتح نزاعاً من تفاصيل الطلب." }, language)}>
         <DataTable
           rows={orderRows}
-          emptyLabel={orders === undefined ? localize({ en: "Loading orders...", ar: "جار تحميل الطلبات..." }, language) : localize({ en: "No orders yet.", ar: "لا توجد طلبات بعد." }, language)}
+          emptyLabel={isLoadingOrders ? localize({ en: "Loading orders...", ar: "جار تحميل الطلبات..." }, language) : localize({ en: "No orders yet.", ar: "لا توجد طلبات بعد." }, language)}
           getRowKey={(order) => order._id}
           columns={[
             {
@@ -170,6 +193,14 @@ export function ClientOrdersPage() {
             }
           ]}
         />
+        {canLoadMoreOrders || isLoadingMoreOrders ? (
+          <div className="mt-4 flex justify-center">
+            <Button type="button" variant="outline" disabled={isLoadingMoreOrders} onClick={() => loadMoreOrders(40)}>
+              {isLoadingMoreOrders ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Truck className="size-4" aria-hidden="true" />}
+              {localize({ en: "Load more orders", ar: "تحميل المزيد من الطلبات" }, language)}
+            </Button>
+          </div>
+        ) : null}
       </DashboardCard>
     </PortalShell>
   );

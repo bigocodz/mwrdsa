@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "convex/react";
-import { ArrowLeft, Loader2, PauseCircle, Send, ShieldCheck, X } from "lucide-react";
+import { ArrowLeft, Loader2, PauseCircle, Send, ShieldCheck, Sparkles, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
@@ -36,6 +36,17 @@ function quoteTone(status: string): "info" | "warning" | "danger" | "neutral" {
   return "neutral";
 }
 
+function marginRuleLabel(source: string, language: string) {
+  const labels: Record<string, { en: string; ar: string }> = {
+    clientCategory: { en: "Client + category", ar: "العميل + الفئة" },
+    client: { en: "Client rule", ar: "قاعدة العميل" },
+    category: { en: "Category rule", ar: "قاعدة الفئة" },
+    global: { en: "Global rule", ar: "قاعدة عامة" },
+    default: { en: "Default", ar: "افتراضي" }
+  };
+  return localize(labels[source] ?? { en: source, ar: source }, language);
+}
+
 function quoteLabel(status: string, language: string) {
   const map: Record<string, { en: string; ar: string }> = {
     submitted: { en: "Submitted", ar: "مرسل" },
@@ -61,15 +72,20 @@ export function AdminRfqPricingPage() {
   const queryArgs = isBetterAuthConfigured && user && rfqId ? { actorUserId: user.id as Id<"users">, rfqId: rfqId as Id<"rfqs"> } : "skip";
   const aggregation = useQuery(api.quotes.listSubmittedQuotesForRfq, queryArgs);
   const setDecision = useMutation(api.quotes.setQuoteDecision);
+  const bulkApproveRecommendedQuotes = useMutation(api.quotes.bulkApproveRecommendedQuotesForRfq);
+  const generateAutoQuotes = useMutation(api.quotes.generateAutoQuotesForRfq);
   const releaseQuotes = useMutation(api.quotes.releaseApprovedQuotes);
 
   const [marginInputs, setMarginInputs] = useState<Record<string, string>>({});
   const [reasonInputs, setReasonInputs] = useState<Record<string, string>>({});
   const [pendingDecisionId, setPendingDecisionId] = useState<Id<"supplierQuotes"> | null>(null);
+  const [isBulkApproving, setIsBulkApproving] = useState(false);
+  const [isGeneratingAutoQuotes, setIsGeneratingAutoQuotes] = useState(false);
   const [isReleasing, setIsReleasing] = useState(false);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
 
   const approvedCount = useMemo(() => (aggregation?.quotes ?? []).filter((quote) => quote.status === "approvedForRelease").length, [aggregation]);
+  const reviewableCount = useMemo(() => (aggregation?.quotes ?? []).filter((quote) => quote.status === "submitted" || quote.status === "underReview" || quote.status === "held").length, [aggregation]);
 
   async function handleDecision(quoteId: Id<"supplierQuotes">, fallbackMarginPercent: number, decision: "approvedForRelease" | "held" | "rejected") {
     if (!isBetterAuthConfigured || !user) return;
@@ -136,6 +152,69 @@ export function AdminRfqPricingPage() {
     }
   }
 
+  async function handleBulkApproveRecommended() {
+    if (!isBetterAuthConfigured || !user || !rfqId) return;
+    setMessage(null);
+    setIsBulkApproving(true);
+    try {
+      const result = await bulkApproveRecommendedQuotes({ actorUserId: user.id as Id<"users">, rfqId: rfqId as Id<"rfqs"> });
+      trackEvent("quotes_bulk_approved", {
+        rfq_id: rfqId,
+        approved_count: result.approvedCount,
+        threshold_held_approved_count: result.thresholdHeldApprovedCount
+      });
+      setMessage({
+        tone: "success",
+        text: localize(
+          {
+            en: `Approved ${result.approvedCount} quote(s) with recommended margins.`,
+            ar: `تم اعتماد ${result.approvedCount} عرضاً بالهوامش المقترحة.`
+          },
+          language
+        )
+      });
+    } catch (error) {
+      const text = error instanceof Error ? error.message : "";
+      setMessage({ tone: "error", text: text || localize({ en: "Could not bulk approve quotes.", ar: "تعذر اعتماد العروض دفعة واحدة." }, language) });
+    } finally {
+      setIsBulkApproving(false);
+    }
+  }
+
+  async function handleGenerateAutoQuotes() {
+    if (!isBetterAuthConfigured || !user || !rfqId) return;
+    setMessage(null);
+    setIsGeneratingAutoQuotes(true);
+    try {
+      const result = await generateAutoQuotes({ actorUserId: user.id as Id<"users">, rfqId: rfqId as Id<"rfqs"> });
+      trackEvent("quotes_auto_generated", { rfq_id: rfqId, quotes_created: result.quotesCreated });
+      setMessage({
+        tone: result.quotesCreated > 0 ? "success" : "error",
+        text:
+          result.quotesCreated > 0
+            ? localize(
+                {
+                  en: `Generated ${result.quotesCreated} quote(s) from approved supplier offers.`,
+                  ar: `تم إنشاء ${result.quotesCreated} عرضاً من عروض الموردين المعتمدة.`
+                },
+                language
+              )
+            : localize(
+                {
+                  en: "No approved auto-quote offers matched this RFQ.",
+                  ar: "لم يتم العثور على عروض تسعير آلي معتمدة تطابق هذا الطلب."
+                },
+                language
+              )
+      });
+    } catch (error) {
+      const text = error instanceof Error ? error.message : "";
+      setMessage({ tone: "error", text: text || localize({ en: "Could not generate auto-quotes.", ar: "تعذر إنشاء عروض آلية." }, language) });
+    } finally {
+      setIsGeneratingAutoQuotes(false);
+    }
+  }
+
   return (
     <PortalShell
       title={localize({ en: "Quote pricing", ar: "تسعير العروض" }, language)}
@@ -195,6 +274,14 @@ export function AdminRfqPricingPage() {
               </div>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-3">
+              <Button type="button" variant="outline" disabled={isGeneratingAutoQuotes || !isBetterAuthConfigured} onClick={() => void handleGenerateAutoQuotes()}>
+                {isGeneratingAutoQuotes ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}
+                {localize({ en: "Generate auto-quotes", ar: "إنشاء عروض آلية" }, language)}
+              </Button>
+              <Button type="button" variant="outline" disabled={isBulkApproving || reviewableCount === 0 || !isBetterAuthConfigured} onClick={() => void handleBulkApproveRecommended()}>
+                {isBulkApproving ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <ShieldCheck className="size-4" aria-hidden="true" />}
+                {localize({ en: "Approve recommended", ar: "اعتماد المقترح" }, language)}
+              </Button>
               <Button type="button" disabled={isReleasing || approvedCount === 0 || !isBetterAuthConfigured} onClick={() => void handleRelease()}>
                 {isReleasing ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Send className="size-4" aria-hidden="true" />}
                 {localize({ en: "Release approved quotes", ar: "إصدار العروض المعتمدة" }, language)}
@@ -231,7 +318,8 @@ export function AdminRfqPricingPage() {
             ) : (
               <div className="flex flex-col gap-4">
                 {aggregation.quotes.map((quote) => {
-                  const margin = Number(marginInputs[quote._id] ?? quote.currentMarginPercent);
+                  const fallbackMargin = quote.currentMarginPercent || quote.recommendedMarginPercent;
+                  const margin = Number(marginInputs[quote._id] ?? fallbackMargin);
                   const projectedClientTotal = Number.isFinite(margin) ? quote.supplierTotal * (1 + margin / 100) : quote.supplierTotal;
                   const isPending = pendingDecisionId === quote._id;
                   const isFinalized = quote.status === "released" || quote.status === "selected";
@@ -245,10 +333,15 @@ export function AdminRfqPricingPage() {
                             {localize({ en: "days", ar: "يوم" }, language)} · {localize({ en: "Valid until", ar: "صالح حتى" }, language)} {quote.validUntil}
                           </span>
                         </div>
-                        <StatusBadge tone={quoteTone(quote.status)}>{quoteLabel(quote.status, language)}</StatusBadge>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {quote.thresholdHoldRecommended ? (
+                            <StatusBadge tone="warning">{localize({ en: "Threshold hold", ar: "تعليق حد مالي" }, language)}</StatusBadge>
+                          ) : null}
+                          <StatusBadge tone={quoteTone(quote.status)}>{quoteLabel(quote.status, language)}</StatusBadge>
+                        </div>
                       </div>
 
-                      <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="grid gap-3 sm:grid-cols-4">
                         <div className="flex flex-col gap-1 rounded-lg bg-muted/40 p-3">
                           <span className="text-xs font-semibold uppercase text-muted-foreground">{localize({ en: "Supplier total", ar: "إجمالي المورد" }, language)}</span>
                           <span className="text-lg font-semibold">{formatCurrency(quote.supplierTotal, language)}</span>
@@ -269,6 +362,13 @@ export function AdminRfqPricingPage() {
                             {localize({ en: "Current", ar: "الحالي" }, language)}: {quote.currentMarginPercent}%
                           </span>
                         </div>
+                        <div className="flex flex-col gap-1 rounded-lg bg-muted/40 p-3">
+                          <span className="text-xs font-semibold uppercase text-muted-foreground">{localize({ en: "Recommended margin", ar: "الهامش المقترح" }, language)}</span>
+                          <span className="text-lg font-semibold">{quote.recommendedMarginPercent}%</span>
+                          <span className="text-xs text-muted-foreground">
+                            {marginRuleLabel(quote.marginRuleSource, language)} · {formatCurrency(quote.thresholdHoldAmount, language)}
+                          </span>
+                        </div>
                       </div>
 
                       {!isFinalized ? (
@@ -279,7 +379,7 @@ export function AdminRfqPricingPage() {
                               type="number"
                               min="0"
                               step="0.1"
-                              value={marginInputs[quote._id] ?? String(quote.currentMarginPercent || 0)}
+                              value={marginInputs[quote._id] ?? String(fallbackMargin)}
                               onChange={(event) => setMarginInputs((current) => ({ ...current, [quote._id]: event.target.value }))}
                               disabled={isPending}
                             />
@@ -293,19 +393,19 @@ export function AdminRfqPricingPage() {
                             />
                           </label>
                           <div className="flex items-end">
-                            <Button type="button" disabled={isPending} onClick={() => void handleDecision(quote._id, quote.currentMarginPercent, "approvedForRelease")}>
+                            <Button type="button" disabled={isPending} onClick={() => void handleDecision(quote._id, fallbackMargin, "approvedForRelease")}>
                               {isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <ShieldCheck className="size-4" aria-hidden="true" />}
                               {localize({ en: "Approve", ar: "اعتماد" }, language)}
                             </Button>
                           </div>
                           <div className="flex items-end">
-                            <Button type="button" variant="outline" disabled={isPending} onClick={() => void handleDecision(quote._id, quote.currentMarginPercent, "held")}>
+                            <Button type="button" variant="outline" disabled={isPending} onClick={() => void handleDecision(quote._id, fallbackMargin, "held")}>
                               <PauseCircle className="size-4" aria-hidden="true" />
                               {localize({ en: "Hold", ar: "تعليق" }, language)}
                             </Button>
                           </div>
                           <div className="flex items-end">
-                            <Button type="button" variant="ghost" disabled={isPending} onClick={() => void handleDecision(quote._id, quote.currentMarginPercent, "rejected")}>
+                            <Button type="button" variant="ghost" disabled={isPending} onClick={() => void handleDecision(quote._id, fallbackMargin, "rejected")}>
                               <X className="size-4" aria-hidden="true" />
                               {localize({ en: "Reject", ar: "رفض" }, language)}
                             </Button>

@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { action, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { refreshPurchaseOrderAnalytics, refreshSupplierAnalyticsForOrder } from "./analytics";
 import { createAuth } from "./auth";
 import type { Id } from "./_generated/dataModel";
 
@@ -26,6 +27,7 @@ const roleLiteral = v.union(
 
 const DEMO_PASSWORD = "Demo123!@#";
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
 
 const DEMO_ACCOUNTS = [
   {
@@ -147,6 +149,17 @@ type SeedLineItem = {
   quantity: number;
   unit: string;
 };
+
+function boundedInteger(value: number | undefined, fallback: number, min: number, max: number) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(Math.floor(value), max));
+}
+
+function loadId(prefix: string, index: number) {
+  return `${prefix}-${String(index + 1).padStart(4, "0")}`;
+}
 
 export const _seedDemoWorkflowData = internalMutation({
   args: {},
@@ -387,6 +400,129 @@ export const _seedDemoWorkflowData = internalMutation({
       specificationsEn: "Print, scan, copy, and wireless network"
     });
 
+    async function upsertMarginRule(input: {
+      name: string;
+      categoryId?: Id<"categories">;
+      clientOrganizationId?: Id<"organizations">;
+      marginPercent: number;
+    }) {
+      const existing = (await ctx.db
+        .query("marginRules")
+        .withIndex("by_active", (q) => q.eq("isActive", true))
+        .take(100))
+        .find((rule) => rule.name === input.name);
+      const payload = {
+        categoryId: input.categoryId,
+        clientOrganizationId: input.clientOrganizationId,
+        marginPercent: input.marginPercent,
+        isActive: true,
+        updatedAt: now
+      };
+      if (existing) {
+        await ctx.db.patch(existing._id, payload);
+        return existing._id;
+      }
+      return await ctx.db.insert("marginRules", {
+        name: input.name,
+        createdAt: now,
+        ...payload
+      });
+    }
+
+    await upsertMarginRule({
+      name: "Demo default marketplace margin",
+      marginPercent: 12
+    });
+    await upsertMarginRule({
+      name: "Demo IT client-category margin",
+      categoryId: technologyCategoryId,
+      clientOrganizationId,
+      marginPercent: 15
+    });
+
+    async function upsertSupplierOffer(input: {
+      productId: Id<"products">;
+      supplierSku: string;
+      packType: string;
+      minOrderQuantity: number;
+      unitCost: number;
+      leadTimeDays: number;
+      autoQuoteEnabled: boolean;
+      status: "pendingApproval" | "approved";
+    }) {
+      const existing = await ctx.db
+        .query("supplierOffers")
+        .withIndex("by_product_supplier", (q) => q.eq("productId", input.productId).eq("supplierOrganizationId", supplierOrganizationId))
+        .first();
+      const payload = {
+        supplierSku: input.supplierSku,
+        packType: input.packType,
+        minOrderQuantity: input.minOrderQuantity,
+        unitCost: input.unitCost,
+        leadTimeDays: input.leadTimeDays,
+        autoQuoteEnabled: input.autoQuoteEnabled,
+        reviewWindowMinutes: 30,
+        status: input.status,
+        submittedAt: atDays(-9),
+        approvedAt: input.status === "approved" ? atDays(-8) : undefined,
+        updatedAt: atDays(-8)
+      };
+      if (existing) {
+        await ctx.db.patch(existing._id, payload);
+        return existing._id;
+      }
+      return await ctx.db.insert("supplierOffers", {
+        productId: input.productId,
+        supplierOrganizationId,
+        createdByUserId: supplierUser._id,
+        createdAt: atDays(-10),
+        ...payload
+      });
+    }
+
+    await upsertSupplierOffer({
+      productId: chairId,
+      supplierSku: "SUP-CHAIR-MESH-01",
+      packType: "each",
+      minOrderQuantity: 5,
+      unitCost: 390,
+      leadTimeDays: 8,
+      autoQuoteEnabled: true,
+      status: "approved"
+    });
+    await upsertSupplierOffer({
+      productId: laptopId,
+      supplierSku: "SUP-LAPTOP-BIZ-14",
+      packType: "each",
+      minOrderQuantity: 2,
+      unitCost: 3750,
+      leadTimeDays: 12,
+      autoQuoteEnabled: true,
+      status: "pendingApproval"
+    });
+
+    const existingProductRequest = (await ctx.db
+      .query("productAdditionRequests")
+      .withIndex("by_supplier_updated_at", (q) => q.eq("supplierOrganizationId", supplierOrganizationId))
+      .take(50))
+      .find((request) => request.sku === "SUP-DEMO-DESK-001");
+    if (!existingProductRequest) {
+      await ctx.db.insert("productAdditionRequests", {
+        supplierOrganizationId,
+        requestedByUserId: supplierUser._id,
+        categoryId: officeCategoryId,
+        sku: "SUP-DEMO-DESK-001",
+        nameAr: "مكتب عمل قابل للتعديل",
+        nameEn: "Adjustable Work Desk",
+        specificationsAr: "ارتفاع قابل للتعديل، سطح 140 سم",
+        specificationsEn: "Adjustable height, 140cm worktop",
+        packType: "each",
+        status: "pending",
+        createdAt: atDays(-6),
+        updatedAt: atDays(-6)
+      });
+    }
+
     const completed = await insertRfq({
       status: "poGenerated",
       marker: "DEMO_SEED_COMPLETED_ORDER",
@@ -548,6 +684,324 @@ export const _seedDemoWorkflowData = internalMutation({
   }
 });
 
+export const _seedLoadTestBatch = internalMutation({
+  args: {
+    runLabel: v.string(),
+    batchIndex: v.number(),
+    batchSize: v.number(),
+    clientCount: v.number(),
+    supplierCount: v.number()
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const batchSize = boundedInteger(args.batchSize, 25, 1, 50);
+    const clientCount = boundedInteger(args.clientCount, 3, 1, 25);
+    const supplierCount = boundedInteger(args.supplierCount, 5, 1, 50);
+    const startIndex = Math.max(0, Math.floor(args.batchIndex)) * batchSize;
+    const dateFromTimestamp = (timestamp: number) => new Date(timestamp).toISOString().slice(0, 10);
+
+    async function findAdminUser() {
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", "admin@mwrd.local"))
+        .unique();
+      if (!user) {
+        throw new Error("Run seedDevelopmentData before seeding load-test data.");
+      }
+      return user;
+    }
+
+    async function ensureLoadOrgAndUser(input: {
+      type: "client" | "supplier";
+      index: number;
+    }) {
+      const anonymousId = input.type === "client" ? loadId("LOAD-CLIENT", input.index) : loadId("LOAD-SUPPLIER", input.index);
+      const existingOrg = input.type === "client"
+        ? await ctx.db
+          .query("organizations")
+          .withIndex("by_client_anonymous_id", (q) => q.eq("clientAnonymousId", anonymousId))
+          .first()
+        : await ctx.db
+          .query("organizations")
+          .withIndex("by_supplier_anonymous_id", (q) => q.eq("supplierAnonymousId", anonymousId))
+          .first();
+      const orgId = existingOrg?._id ?? await ctx.db.insert("organizations", {
+        type: input.type,
+        name: input.type === "client" ? `Load Client ${input.index + 1}` : `Load Supplier ${input.index + 1}`,
+        clientAnonymousId: input.type === "client" ? anonymousId : undefined,
+        supplierAnonymousId: input.type === "supplier" ? anonymousId : undefined,
+        status: "active",
+        defaultLanguage: "en",
+        createdAt: now,
+        updatedAt: now
+      });
+
+      if (existingOrg) {
+        await ctx.db.patch(existingOrg._id, {
+          status: "active",
+          updatedAt: now
+        });
+      }
+
+      const email = `load-${input.type}-${String(input.index + 1).padStart(3, "0")}@mwrd.local`;
+      const existingUser = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", email))
+        .unique();
+      const roles = input.type === "client" ? ["orgAdmin", "procurementManager"] as const : ["supplierAdmin", "quotationOfficer"] as const;
+      const userId = existingUser?._id ?? await ctx.db.insert("users", {
+        organizationId: orgId,
+        email,
+        name: input.type === "client" ? `Load Client User ${input.index + 1}` : `Load Supplier User ${input.index + 1}`,
+        roles: [...roles],
+        language: "en",
+        status: "active",
+        createdAt: now,
+        updatedAt: now
+      });
+
+      if (existingUser) {
+        await ctx.db.patch(existingUser._id, {
+          organizationId: orgId,
+          roles: [...roles],
+          status: "active",
+          updatedAt: now
+        });
+      }
+
+      return { organizationId: orgId, userId };
+    }
+
+    async function ensureCategory() {
+      const existing = await ctx.db
+        .query("categories")
+        .withIndex("by_updated_at")
+        .order("desc")
+        .take(500);
+      const found = existing.find((category) => category.nameEn === "Load Test Supplies");
+      if (found) {
+        await ctx.db.patch(found._id, {
+          isActive: true,
+          updatedAt: now
+        });
+        return found._id;
+      }
+      return await ctx.db.insert("categories", {
+        parentCategoryId: undefined,
+        nameAr: "مستلزمات اختبار الحمل",
+        nameEn: "Load Test Supplies",
+        isActive: true,
+        createdAt: now,
+        updatedAt: now
+      });
+    }
+
+    async function ensureProduct(categoryId: Id<"categories">, index: number) {
+      const sku = `MWRD-LOAD-${String(index + 1).padStart(3, "0")}`;
+      const existing = await ctx.db
+        .query("products")
+        .withIndex("by_sku", (q) => q.eq("sku", sku))
+        .first();
+      const payload = {
+        categoryId,
+        sku,
+        nameAr: `بند اختبار ${index + 1}`,
+        nameEn: `Load Test Item ${index + 1}`,
+        descriptionAr: "بند مخصص لاختبار قابلية التوسع.",
+        descriptionEn: "Synthetic item for load testing procurement flows.",
+        specificationsAr: "مواصفات قياسية لاختبار الحمل",
+        specificationsEn: "Standard load-test specification",
+        isVisible: true,
+        updatedAt: now
+      };
+      if (existing) {
+        await ctx.db.patch(existing._id, payload);
+        return existing._id;
+      }
+      return await ctx.db.insert("products", {
+        ...payload,
+        createdAt: now
+      });
+    }
+
+    const adminUser = await findAdminUser();
+    const clients = [];
+    const suppliers = [];
+    for (let index = 0; index < clientCount; index++) {
+      clients.push(await ensureLoadOrgAndUser({ type: "client", index }));
+    }
+    for (let index = 0; index < supplierCount; index++) {
+      suppliers.push(await ensureLoadOrgAndUser({ type: "supplier", index }));
+    }
+
+    const categoryId = await ensureCategory();
+    const products = [];
+    for (let index = 0; index < 8; index++) {
+      products.push(await ensureProduct(categoryId, index));
+    }
+
+    const orderStatuses = ["pending", "confirmed", "processing", "shipped", "delivered", "receiptConfirmed", "completed", "delayed", "disputed"] as const;
+    let createdRfqs = 0;
+    let createdOrders = 0;
+
+    for (let offset = 0; offset < batchSize; offset++) {
+      const globalIndex = startIndex + offset;
+      const client = clients[globalIndex % clients.length];
+      const supplier = suppliers[globalIndex % suppliers.length];
+      const createdAt = now - ((globalIndex % 180) + 1) * DAY_MS - (globalIndex % 9) * HOUR_MS;
+      const approvedAt = createdAt + 2 * DAY_MS;
+      const orderUpdatedAt = Math.min(now - HOUR_MS, approvedAt + ((globalIndex % 21) + 1) * DAY_MS);
+      const requiredDeliveryDate = dateFromTimestamp(createdAt + ((globalIndex % 18) + 10) * DAY_MS);
+      const lineItemCount = 1 + (globalIndex % 3);
+      const marker = `LOAD_TEST:${args.runLabel}:${globalIndex}`;
+
+      const rfqId = await ctx.db.insert("rfqs", {
+        clientOrganizationId: client.organizationId,
+        createdByUserId: client.userId,
+        status: "poGenerated",
+        requiredDeliveryDate,
+        department: ["IT", "Finance", "Operations", "Facilities"][globalIndex % 4],
+        branch: ["Riyadh HQ", "Jeddah", "Dammam", "Makkah"][globalIndex % 4],
+        costCenter: `CC-${100 + (globalIndex % 20)}`,
+        notes: marker,
+        isNonCatalog: false,
+        createdAt,
+        updatedAt: approvedAt
+      });
+      createdRfqs++;
+
+      const rfqLineItemIds: Array<{ id: Id<"rfqLineItems">; quantity: number; unitPrice: number }> = [];
+      for (let lineIndex = 0; lineIndex < lineItemCount; lineIndex++) {
+        const quantity = 1 + ((globalIndex + lineIndex) % 12);
+        const unitPrice = 120 + ((globalIndex + lineIndex) % 30) * 17;
+        const productId = products[(globalIndex + lineIndex) % products.length];
+        const lineItemId = await ctx.db.insert("rfqLineItems", {
+          rfqId,
+          productId,
+          quantity,
+          unit: "each",
+          createdAt
+        });
+        rfqLineItemIds.push({ id: lineItemId, quantity, unitPrice });
+      }
+
+      await ctx.db.insert("supplierRfqAssignments", {
+        rfqId,
+        supplierOrganizationId: supplier.organizationId,
+        status: "accepted",
+        responseDeadline: createdAt + 3 * DAY_MS,
+        createdAt: createdAt + HOUR_MS,
+        updatedAt: createdAt + 2 * HOUR_MS
+      });
+
+      const quoteId = await ctx.db.insert("supplierQuotes", {
+        rfqId,
+        supplierOrganizationId: supplier.organizationId,
+        submittedByUserId: supplier.userId,
+        status: "selected",
+        leadTimeDays: 3 + (globalIndex % 15),
+        validUntil: dateFromTimestamp(now + 30 * DAY_MS),
+        supportsPartialFulfillment: globalIndex % 2 === 0,
+        createdAt: createdAt + 2 * HOUR_MS,
+        updatedAt: approvedAt - HOUR_MS
+      });
+
+      const marginPercent = 8 + (globalIndex % 10);
+      for (const item of rfqLineItemIds) {
+        const supplierTotalPrice = item.unitPrice * item.quantity;
+        const clientFinalUnitPrice = item.unitPrice * (1 + marginPercent / 100);
+        await ctx.db.insert("supplierQuoteLineItems", {
+          quoteId,
+          rfqLineItemId: item.id,
+          supplierUnitPrice: item.unitPrice,
+          supplierTotalPrice,
+          clientFinalUnitPrice,
+          clientFinalTotalPrice: clientFinalUnitPrice * item.quantity,
+          createdAt: createdAt + 2 * HOUR_MS,
+          updatedAt: approvedAt - HOUR_MS
+        });
+      }
+
+      await ctx.db.insert("marginOverrides", {
+        quoteId,
+        adjustedByUserId: adminUser._id,
+        previousMarginPercent: 0,
+        newMarginPercent: marginPercent,
+        reason: "Load-test generated margin",
+        createdAt: approvedAt - 2 * HOUR_MS
+      });
+
+      const purchaseOrderId = await ctx.db.insert("purchaseOrders", {
+        rfqId,
+        selectedQuoteId: quoteId,
+        clientOrganizationId: client.organizationId,
+        status: "sentToSupplier",
+        termsTemplateId: "MWRD-LOAD-STANDARD",
+        approvedAt,
+        createdAt: approvedAt - DAY_MS,
+        updatedAt: approvedAt
+      });
+
+      await ctx.db.insert("approvalInstances", {
+        purchaseOrderId,
+        status: "approved",
+        createdAt: approvedAt - DAY_MS,
+        updatedAt: approvedAt
+      });
+
+      const status = orderStatuses[globalIndex % orderStatuses.length];
+      const orderId = await ctx.db.insert("orders", {
+        purchaseOrderId,
+        clientOrganizationId: client.organizationId,
+        supplierOrganizationId: supplier.organizationId,
+        status,
+        createdAt: approvedAt,
+        updatedAt: orderUpdatedAt
+      });
+      createdOrders++;
+
+      if (status === "delivered" || status === "receiptConfirmed" || status === "completed") {
+        await ctx.db.insert("orderStatusEvents", {
+          orderId,
+          status: "delivered",
+          actorUserId: supplier.userId,
+          notes: "Load-test delivery event.",
+          createdAt: Math.max(approvedAt + DAY_MS, orderUpdatedAt - DAY_MS)
+        });
+      }
+      if (status === "receiptConfirmed" || status === "completed") {
+        await ctx.db.insert("orderStatusEvents", {
+          orderId,
+          status: "receiptConfirmed",
+          actorUserId: client.userId,
+          notes: "Load-test receipt confirmation.",
+          createdAt: orderUpdatedAt
+        });
+      }
+      if (status === "completed") {
+        await ctx.db.insert("orderStatusEvents", {
+          orderId,
+          status: "completed",
+          actorUserId: client.userId,
+          notes: "Load-test completion.",
+          createdAt: orderUpdatedAt
+        });
+      }
+
+      await refreshPurchaseOrderAnalytics(ctx, purchaseOrderId);
+      await refreshSupplierAnalyticsForOrder(ctx, orderId);
+    }
+
+    return {
+      batchIndex: args.batchIndex,
+      createdRfqs,
+      createdOrders,
+      clientCount,
+      supplierCount
+    };
+  }
+});
+
 export const seedDevelopmentData = action({
   args: {},
   handler: async (ctx): Promise<{ accounts: { portal: string; email: string; password: string }[]; demoData: DemoSeedResult }> => {
@@ -597,5 +1051,60 @@ export const seedDevelopmentData = action({
     const demoData = await ctx.runMutation(internal.seed._seedDemoWorkflowData, {}) as DemoSeedResult;
 
     return { accounts: created, demoData };
+  }
+});
+
+export const seedLoadTestData = action({
+  args: {
+    rfqCount: v.optional(v.number()),
+    batchSize: v.optional(v.number()),
+    clientCount: v.optional(v.number()),
+    supplierCount: v.optional(v.number()),
+    runLabel: v.optional(v.string())
+  },
+  handler: async (ctx, args) => {
+    for (const account of DEMO_ACCOUNTS) {
+      await ctx.runMutation(internal.seed._ensureOrgAndUser, {
+        portal: account.portal,
+        orgName: account.orgName,
+        anonymousId: "anonymousId" in account ? account.anonymousId : undefined,
+        email: account.email,
+        name: account.name,
+        roles: [...account.roles]
+      });
+    }
+
+    const rfqCount = boundedInteger(args.rfqCount, 250, 1, 5000);
+    const batchSize = boundedInteger(args.batchSize, 25, 1, 50);
+    const clientCount = boundedInteger(args.clientCount, 3, 1, 25);
+    const supplierCount = boundedInteger(args.supplierCount, 5, 1, 50);
+    const runLabel = args.runLabel?.trim() || `load-${Date.now()}`;
+    const batches = Math.ceil(rfqCount / batchSize);
+    let createdRfqs = 0;
+    let createdOrders = 0;
+
+    for (let batchIndex = 0; batchIndex < batches; batchIndex++) {
+      const remaining = rfqCount - batchIndex * batchSize;
+      const currentBatchSize = Math.min(batchSize, remaining);
+      const result: { createdRfqs: number; createdOrders: number } = await ctx.runMutation(internal.seed._seedLoadTestBatch, {
+        runLabel,
+        batchIndex,
+        batchSize: currentBatchSize,
+        clientCount,
+        supplierCount
+      });
+      createdRfqs += result.createdRfqs;
+      createdOrders += result.createdOrders;
+    }
+
+    return {
+      runLabel,
+      batches,
+      createdRfqs,
+      createdOrders,
+      clientCount,
+      supplierCount,
+      batchSize
+    };
   }
 });

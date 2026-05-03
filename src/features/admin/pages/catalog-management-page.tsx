@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { Eye, EyeOff, FolderPlus, Loader2, PackagePlus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -73,9 +73,13 @@ export function CatalogManagementPage() {
   const { i18n } = useTranslation("admin");
   const { user } = useAuth();
   const language = i18n.language;
-  const queryArgs = isBetterAuthConfigured && user ? { actorUserId: user.id as Id<"users"> } : "skip";
+  const queryArgs = useMemo(() => (isBetterAuthConfigured && user ? { actorUserId: user.id as Id<"users"> } : "skip"), [user]);
   const categories = useQuery(api.catalog.listCategoriesForAdmin, queryArgs);
-  const products = useQuery(api.catalog.listProductsForAdmin, queryArgs);
+  const {
+    results: products,
+    status: productStatus,
+    loadMore: loadMoreProducts
+  } = usePaginatedQuery(api.catalog.listProductsForAdminPaginated, queryArgs, { initialNumItems: 80 });
   const createCategory = useMutation(api.catalog.createCategory);
   const createProduct = useMutation(api.catalog.createProduct);
   const updateProductVisibility = useMutation(api.catalog.updateProductVisibility);
@@ -83,6 +87,9 @@ export function CatalogManagementPage() {
   const [categoryMessage, setCategoryMessage] = useState<SubmitMessage | null>(null);
   const [productMessage, setProductMessage] = useState<SubmitMessage | null>(null);
   const [pendingProductId, setPendingProductId] = useState<Id<"products"> | null>(null);
+  const isLoadingProducts = productStatus === "LoadingFirstPage";
+  const canLoadMoreProducts = productStatus === "CanLoadMore";
+  const isLoadingMoreProducts = productStatus === "LoadingMore";
 
   const {
     formState: { errors: categoryErrors, isSubmitting: isSubmittingCategory },
@@ -145,8 +152,8 @@ export function CatalogManagementPage() {
     });
   }, [normalizedSearch, products]);
 
-  const totalProducts = products?.length ?? 0;
-  const visibleProducts = (products ?? []).filter((product) => product.isVisible).length;
+  const totalProducts = products.length;
+  const visibleProducts = products.filter((product) => product.isVisible).length;
   const hiddenProducts = totalProducts - visibleProducts;
 
   const handleCreateCategory = handleSubmitCategory(async (values) => {
@@ -260,7 +267,7 @@ export function CatalogManagementPage() {
       <StatStrip
         stats={[
           { label: localize({ en: "Categories", ar: "الفئات" }, language), value: String(categories?.length ?? 0), detail: localize({ en: "Arabic and English labels", ar: "تسميات عربية وإنجليزية" }, language) },
-          { label: localize({ en: "Client-visible items", ar: "بنود ظاهرة للعميل" }, language), value: String(visibleProducts), detail: localize({ en: "Shown without catalog prices", ar: "تظهر بدون أسعار كتالوج" }, language), trendTone: "positive" },
+          { label: localize({ en: "Client-visible items", ar: "بنود ظاهرة للعميل" }, language), value: String(visibleProducts), detail: localize({ en: "Loaded without catalog prices", ar: "محملة بدون أسعار كتالوج" }, language), trendTone: "positive" },
           { label: localize({ en: "Admin-only items", ar: "بنود للإدارة فقط" }, language), value: String(hiddenProducts), detail: localize({ en: "Hidden from client catalog", ar: "مخفية من كتالوج العميل" }, language), trendTone: "neutral" },
           { label: localize({ en: "Public prices", ar: "أسعار عامة" }, language), value: "0", detail: localize({ en: "Pricing happens after RFQ", ar: "التسعير بعد طلب التسعير" }, language) }
         ]}
@@ -409,7 +416,7 @@ export function CatalogManagementPage() {
           <DashboardCard title={localize({ en: "Products", ar: "المنتجات" }, language)}>
             <DataTable
               rows={productRows}
-              emptyLabel={products === undefined ? localize({ en: "Loading products...", ar: "جار تحميل المنتجات..." }, language) : localize({ en: "No products found.", ar: "لا توجد منتجات." }, language)}
+              emptyLabel={isLoadingProducts ? localize({ en: "Loading products...", ar: "جار تحميل المنتجات..." }, language) : localize({ en: "No products found.", ar: "لا توجد منتجات." }, language)}
               getRowKey={(product) => product._id}
               columns={[
                 { header: "SKU", cell: (product) => <span className="font-semibold">{product.sku}</span> },
@@ -431,6 +438,14 @@ export function CatalogManagementPage() {
                 }
               ]}
             />
+            {canLoadMoreProducts || isLoadingMoreProducts ? (
+              <div className="mt-4 flex justify-center">
+                <Button type="button" variant="outline" size="sm" disabled={isLoadingMoreProducts} onClick={() => loadMoreProducts(80)}>
+                  {isLoadingMoreProducts ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <PackagePlus className="size-4" aria-hidden="true" />}
+                  {localize({ en: "Load more products", ar: "تحميل المزيد من المنتجات" }, language)}
+                </Button>
+              </div>
+            ) : null}
           </DashboardCard>
         </div>
       </section>

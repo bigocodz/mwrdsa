@@ -12,6 +12,7 @@
     "test:e2e": "playwright test",
     "build": "tsc -p tsconfig.app.json --noEmit && vite build",
     "seed": "convex run seed:seedDevelopmentData",
+    "seed:load": "convex run seed:seedLoadTestData",
     "preview": "vite preview"
   },
   "dependencies": {

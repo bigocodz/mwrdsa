@@ -1,8 +1,12 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { mutation, query, type QueryCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
+import { refreshPurchaseOrderAnalytics, refreshSupplierAnalyticsForOrder } from "./analytics";
 import { notifyOrganization } from "./notifications";
 import { assertActiveUser, assertHasPermission, assertSameOrganization } from "./rbac";
+
+const CLIENT_PURCHASE_ORDER_LIST_LIMIT = 100;
 
 async function loadQuoteSnapshot(ctx: QueryCtx, quoteId: Id<"supplierQuotes">) {
   const quote = await ctx.db.get(quoteId);
@@ -48,6 +52,28 @@ async function loadQuoteSnapshot(ctx: QueryCtx, quoteId: Id<"supplierQuotes">) {
   };
 }
 
+async function buildPurchaseOrderRow(ctx: QueryCtx, purchaseOrder: Doc<"purchaseOrders">) {
+  const snapshot = await loadQuoteSnapshot(ctx, purchaseOrder.selectedQuoteId);
+  const supplier = snapshot ? await ctx.db.get(snapshot.supplierOrganizationId) : null;
+  const approvals = await ctx.db
+    .query("approvalInstances")
+    .withIndex("by_po", (q) => q.eq("purchaseOrderId", purchaseOrder._id))
+    .collect();
+  const latest = approvals.length > 0 ? approvals.sort((a, b) => b.createdAt - a.createdAt)[0] : null;
+
+  return {
+    _id: purchaseOrder._id,
+    rfqId: purchaseOrder.rfqId,
+    status: purchaseOrder.status,
+    createdAt: purchaseOrder.createdAt,
+    updatedAt: purchaseOrder.updatedAt,
+    approvedAt: purchaseOrder.approvedAt,
+    clientTotal: snapshot?.clientTotal ?? 0,
+    supplierAnonymousId: supplier?.supplierAnonymousId ?? "—",
+    approvalStatus: latest?.status ?? "pending"
+  };
+}
+
 export const generatePoFromSelectedQuote = mutation({
   args: {
     actorUserId: v.id("users"),
@@ -67,11 +93,10 @@ export const generatePoFromSelectedQuote = mutation({
       throw new Error("Select a quote before generating a PO.");
     }
 
-    const existing = await ctx.db
+    const duplicate = await ctx.db
       .query("purchaseOrders")
-      .withIndex("by_client", (q) => q.eq("clientOrganizationId", rfq.clientOrganizationId))
-      .collect();
-    const duplicate = existing.find((entry) => entry.rfqId === args.rfqId);
+      .withIndex("by_rfq", (q) => q.eq("rfqId", args.rfqId))
+      .first();
     if (duplicate) {
       throw new Error("A purchase order already exists for this RFQ.");
     }
@@ -141,32 +166,34 @@ export const listPurchaseOrdersForActor = query({
     const clientOrganizationId = actor.organizationId as Id<"organizations">;
     const purchaseOrders = await ctx.db
       .query("purchaseOrders")
-      .withIndex("by_client", (q) => q.eq("clientOrganizationId", clientOrganizationId))
-      .collect();
-    purchaseOrders.sort((a, b) => b.createdAt - a.createdAt);
+      .withIndex("by_client_updated_at", (q) => q.eq("clientOrganizationId", clientOrganizationId))
+      .order("desc")
+      .take(CLIENT_PURCHASE_ORDER_LIST_LIMIT);
 
-    return await Promise.all(
-      purchaseOrders.map(async (purchaseOrder) => {
-        const snapshot = await loadQuoteSnapshot(ctx, purchaseOrder.selectedQuoteId);
-        const supplier = snapshot ? await ctx.db.get(snapshot.supplierOrganizationId) : null;
-        const approvals = await ctx.db
-          .query("approvalInstances")
-          .withIndex("by_po", (q) => q.eq("purchaseOrderId", purchaseOrder._id))
-          .collect();
-        const latest = approvals.length > 0 ? approvals.sort((a, b) => b.createdAt - a.createdAt)[0] : null;
-        return {
-          _id: purchaseOrder._id,
-          rfqId: purchaseOrder.rfqId,
-          status: purchaseOrder.status,
-          createdAt: purchaseOrder.createdAt,
-          updatedAt: purchaseOrder.updatedAt,
-          approvedAt: purchaseOrder.approvedAt,
-          clientTotal: snapshot?.clientTotal ?? 0,
-          supplierAnonymousId: supplier?.supplierAnonymousId ?? "—",
-          approvalStatus: latest?.status ?? "pending"
-        };
-      })
-    );
+    return await Promise.all(purchaseOrders.map((purchaseOrder) => buildPurchaseOrderRow(ctx, purchaseOrder)));
+  }
+});
+
+export const listPurchaseOrdersForActorPaginated = query({
+  args: {
+    actorUserId: v.id("users"),
+    paginationOpts: paginationOptsValidator
+  },
+  handler: async (ctx, args) => {
+    const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
+    assertHasPermission(actor, "rfq:create");
+
+    const clientOrganizationId = actor.organizationId as Id<"organizations">;
+    const result = await ctx.db
+      .query("purchaseOrders")
+      .withIndex("by_client_updated_at", (q) => q.eq("clientOrganizationId", clientOrganizationId))
+      .order("desc")
+      .paginate(args.paginationOpts);
+
+    return {
+      ...result,
+      page: await Promise.all(result.page.map((purchaseOrder) => buildPurchaseOrderRow(ctx, purchaseOrder)))
+    };
   }
 });
 
@@ -274,6 +301,10 @@ export const decidePurchaseOrder = mutation({
       updatedAt: now
     });
 
+    if (args.decision === "approved") {
+      await refreshPurchaseOrderAnalytics(ctx, args.purchaseOrderId);
+    }
+
     await ctx.db.insert("auditLogs", {
       actorUserId: args.actorUserId,
       organizationId: purchaseOrder.clientOrganizationId,
@@ -322,7 +353,7 @@ export const sendPurchaseOrderToSupplier = mutation({
 
     const quote = await ctx.db.get(purchaseOrder.selectedQuoteId);
     if (quote) {
-      await ctx.db.insert("orders", {
+      const orderId = await ctx.db.insert("orders", {
         purchaseOrderId: purchaseOrder._id,
         clientOrganizationId: purchaseOrder.clientOrganizationId,
         supplierOrganizationId: quote.supplierOrganizationId,
@@ -330,6 +361,7 @@ export const sendPurchaseOrderToSupplier = mutation({
         createdAt: now,
         updatedAt: now
       });
+      await refreshSupplierAnalyticsForOrder(ctx, orderId);
     }
 
     await ctx.db.insert("auditLogs", {

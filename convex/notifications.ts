@@ -3,6 +3,9 @@ import { internalMutation, mutation, query, type MutationCtx } from "./_generate
 import type { Id } from "./_generated/dataModel";
 import { assertActiveUser } from "./rbac";
 
+const NOTIFICATION_LIST_LIMIT = 100;
+const UNREAD_BADGE_LIMIT = 100;
+
 export async function notifyOrganization(
   ctx: MutationCtx,
   organizationId: Id<"organizations">,
@@ -52,9 +55,9 @@ export const listNotificationsForActor = query({
     assertActiveUser(await ctx.db.get(args.actorUserId));
     const notifications = await ctx.db
       .query("notifications")
-      .withIndex("by_recipient", (q) => q.eq("recipientUserId", args.actorUserId))
+      .withIndex("by_recipient_created_at", (q) => q.eq("recipientUserId", args.actorUserId))
       .order("desc")
-      .take(100);
+      .take(NOTIFICATION_LIST_LIMIT);
     return notifications.map((entry) => ({
       _id: entry._id,
       type: entry.type,
@@ -76,9 +79,9 @@ export const countUnreadNotificationsForActor = query({
     assertActiveUser(await ctx.db.get(args.actorUserId));
     const notifications = await ctx.db
       .query("notifications")
-      .withIndex("by_recipient", (q) => q.eq("recipientUserId", args.actorUserId))
-      .collect();
-    return notifications.filter((entry) => !entry.readAt).length;
+      .withIndex("by_recipient_read_at", (q) => q.eq("recipientUserId", args.actorUserId).eq("readAt", undefined))
+      .take(UNREAD_BADGE_LIMIT);
+    return notifications.length;
   }
 });
 
@@ -110,13 +113,11 @@ export const markAllNotificationsRead = mutation({
     assertActiveUser(await ctx.db.get(args.actorUserId));
     const notifications = await ctx.db
       .query("notifications")
-      .withIndex("by_recipient", (q) => q.eq("recipientUserId", args.actorUserId))
+      .withIndex("by_recipient_read_at", (q) => q.eq("recipientUserId", args.actorUserId).eq("readAt", undefined))
       .collect();
     const now = Date.now();
     for (const entry of notifications) {
-      if (!entry.readAt) {
-        await ctx.db.patch(entry._id, { readAt: now });
-      }
+      await ctx.db.patch(entry._id, { readAt: now });
     }
   }
 });
@@ -128,7 +129,7 @@ export const listNotificationsByUser = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("notifications")
-      .withIndex("by_recipient", (q) => q.eq("recipientUserId", args.recipientUserId))
+      .withIndex("by_recipient_created_at", (q) => q.eq("recipientUserId", args.recipientUserId))
       .order("desc")
       .take(50);
   }

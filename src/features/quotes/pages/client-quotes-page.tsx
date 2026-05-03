@@ -1,5 +1,5 @@
-import { useQuery } from "convex/react";
-import { CalendarDays, ScrollText } from "lucide-react";
+import { usePaginatedQuery } from "convex/react";
+import { CalendarDays, Loader2, ScrollText } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
@@ -7,6 +7,7 @@ import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { PortalShell } from "@/components/portal-shell";
 import { DashboardCard, DashboardToolbar, DataTable, StatStrip, StatusBadge } from "@/components/portal-ui";
+import { Button } from "@/components/ui/button";
 import { localize } from "@/features/rfq/data/client-workflow-data";
 import { useClientNav } from "@/features/rfq/hooks/use-client-nav";
 import { useAuth } from "@/lib/auth";
@@ -33,19 +34,26 @@ export function ClientQuotesPage() {
   const navItems = useClientNav();
   const { user } = useAuth();
   const language = i18n.language;
-  const queryArgs = isBetterAuthConfigured && user ? { actorUserId: user.id as Id<"users"> } : "skip";
-  const releasedRfqs = useQuery(api.quotes.listReleasedRfqsForClient, queryArgs);
+  const queryArgs = useMemo(() => (isBetterAuthConfigured && user ? { actorUserId: user.id as Id<"users"> } : "skip"), [user]);
+  const {
+    results: releasedRfqs,
+    status: releasedRfqStatus,
+    loadMore: loadMoreReleasedRfqs
+  } = usePaginatedQuery(api.quotes.listReleasedRfqsForClientPaginated, queryArgs, { initialNumItems: 40 });
   const [searchValue, setSearchValue] = useState("");
+  const isLoadingReleasedRfqs = releasedRfqStatus === "LoadingFirstPage";
+  const canLoadMoreReleasedRfqs = releasedRfqStatus === "CanLoadMore";
+  const isLoadingMoreReleasedRfqs = releasedRfqStatus === "LoadingMore";
 
   const rows = useMemo(() => {
-    const source = releasedRfqs ?? [];
+    const source = releasedRfqs;
     const search = searchValue.trim().toLowerCase();
     if (!search) return source;
     return source.filter((rfq) => [rfq._id, rfq.status].some((value) => value?.toLowerCase().includes(search)));
   }, [releasedRfqs, searchValue]);
 
   const totals = useMemo(() => {
-    const source = releasedRfqs ?? [];
+    const source = releasedRfqs;
     return {
       released: source.length,
       pendingDecision: source.filter((rfq) => rfq.status === "released" && rfq.selectedCount === 0).length,
@@ -74,7 +82,7 @@ export function ClientQuotesPage() {
       <DashboardCard title={localize({ en: "Released quote groups", ar: "مجموعات العروض المصدرة" }, language)} description={localize({ en: "Open a group to compare anonymous quotes side-by-side and lock your selection.", ar: "افتح مجموعة لمقارنة العروض المجهولة جنباً إلى جنب وقفل اختيارك." }, language)}>
         <DataTable
           rows={rows}
-          emptyLabel={releasedRfqs === undefined ? localize({ en: "Loading...", ar: "جار التحميل..." }, language) : localize({ en: "No released quotes yet.", ar: "لا توجد عروض مصدرة بعد." }, language)}
+          emptyLabel={isLoadingReleasedRfqs ? localize({ en: "Loading...", ar: "جار التحميل..." }, language) : localize({ en: "No released quotes yet.", ar: "لا توجد عروض مصدرة بعد." }, language)}
           getRowKey={(rfq) => rfq._id}
           columns={[
             {
@@ -120,6 +128,14 @@ export function ClientQuotesPage() {
             }
           ]}
         />
+        {canLoadMoreReleasedRfqs || isLoadingMoreReleasedRfqs ? (
+          <div className="mt-4 flex justify-center">
+            <Button type="button" variant="outline" disabled={isLoadingMoreReleasedRfqs} onClick={() => loadMoreReleasedRfqs(40)}>
+              {isLoadingMoreReleasedRfqs ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <ScrollText className="size-4" aria-hidden="true" />}
+              {localize({ en: "Load more quote groups", ar: "تحميل المزيد من مجموعات العروض" }, language)}
+            </Button>
+          </div>
+        ) : null}
       </DashboardCard>
     </PortalShell>
   );

@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AdminDashboardPage } from "@/features/admin/pages/admin-dashboard-page";
+import { AdminOfferApprovalsPage } from "@/features/admin/pages/admin-offer-approvals-page";
 import { AdminReportsPage } from "@/features/admin/pages/admin-reports-page";
 import { AdminRfqPricingPage } from "@/features/admin/pages/admin-rfq-pricing-page";
 import { AdminAuditPage, AdminCatalogPage, AdminClientsPage, AdminOperationsPage, AdminSuppliersPage } from "@/features/admin/pages/admin-workspace-pages";
@@ -13,6 +14,7 @@ import { ClientQuotesPage } from "@/features/quotes/pages/client-quotes-page";
 import { ClientDashboardPage } from "@/features/rfq/pages/client-dashboard-page";
 import { ClientRfqDetailPage } from "@/features/rfq/pages/client-rfq-detail-page";
 import { ClientRfqsPage } from "@/features/rfq/pages/client-rfqs-page";
+import { SupplierOffersPage } from "@/features/offers/pages/supplier-offers-page";
 import { SupplierAssignmentDetailPage } from "@/features/supplier/pages/supplier-assignment-detail-page";
 import { SupplierDashboardPage } from "@/features/supplier/pages/supplier-dashboard-page";
 import { SupplierOrderDetailPage } from "@/features/supplier/pages/supplier-order-detail-page";
@@ -62,6 +64,7 @@ export const router = createBrowserRouter([
       { path: "rfqs", element: <SupplierRfqsPage /> },
       { path: "rfqs/:assignmentId", element: <SupplierAssignmentDetailPage /> },
       { path: "quotes", element: <SupplierQuotesPage /> },
+      { path: "offers", element: <SupplierOffersPage /> },
       { path: "orders", element: <SupplierOrdersPage /> },
       { path: "orders/:orderId", element: <SupplierOrderDetailPage /> },
       { path: "performance", element: <SupplierPerformancePage /> }
@@ -78,6 +81,7 @@ export const router = createBrowserRouter([
       { path: "clients", element: <AdminClientsPage /> },
       { path: "suppliers", element: <AdminSuppliersPage /> },
       { path: "catalog", element: <AdminCatalogPage /> },
+      { path: "offers", element: <AdminOfferApprovalsPage /> },
       { path: "reports", element: <AdminReportsPage /> },
       { path: "audit", element: <AdminAuditPage /> }
     ]

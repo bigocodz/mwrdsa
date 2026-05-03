@@ -1,8 +1,12 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { mutation, query, type QueryCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
+import { refreshSupplierAnalyticsForOrder } from "./analytics";
 import { notifyOrganization } from "./notifications";
 import { assertActiveUser, assertHasAnyPermission, assertHasPermission, assertSameOrganization } from "./rbac";
+
+const ORDER_LIST_LIMIT = 100;
 
 const orderStatus = v.union(
   v.literal("pending"),
@@ -84,6 +88,40 @@ async function loadOrderLineItems(ctx: QueryCtx, purchaseOrderId: Id<"purchaseOr
   );
 }
 
+async function buildSupplierOrderRow(ctx: QueryCtx, order: Doc<"orders">) {
+  const totals = await loadOrderTotals(ctx, order.purchaseOrderId);
+  const purchaseOrder = await ctx.db.get(order.purchaseOrderId);
+  const clientOrg = await ctx.db.get(order.clientOrganizationId);
+
+  return {
+    _id: order._id,
+    status: order.status,
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt,
+    purchaseOrderId: order.purchaseOrderId,
+    rfqId: purchaseOrder?.rfqId ?? null,
+    clientAnonymousId: clientOrg?.clientAnonymousId ?? "—",
+    clientTotal: totals.clientTotal,
+    lineItemCount: totals.lineItemCount
+  };
+}
+
+async function buildClientOrderRow(ctx: QueryCtx, order: Doc<"orders">) {
+  const totals = await loadOrderTotals(ctx, order.purchaseOrderId);
+  const supplier = await ctx.db.get(order.supplierOrganizationId);
+
+  return {
+    _id: order._id,
+    status: order.status,
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt,
+    purchaseOrderId: order.purchaseOrderId,
+    supplierAnonymousId: supplier?.supplierAnonymousId ?? "—",
+    clientTotal: totals.clientTotal,
+    lineItemCount: totals.lineItemCount
+  };
+}
+
 export const createOrderFromApprovedPo = mutation({
   args: {
     purchaseOrderId: v.id("purchaseOrders"),
@@ -92,7 +130,7 @@ export const createOrderFromApprovedPo = mutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    return await ctx.db.insert("orders", {
+    const orderId = await ctx.db.insert("orders", {
       purchaseOrderId: args.purchaseOrderId,
       clientOrganizationId: args.clientOrganizationId,
       supplierOrganizationId: args.supplierOrganizationId,
@@ -100,6 +138,8 @@ export const createOrderFromApprovedPo = mutation({
       createdAt: now,
       updatedAt: now
     });
+    await refreshSupplierAnalyticsForOrder(ctx, orderId);
+    return orderId;
   }
 });
 
@@ -155,6 +195,7 @@ export const updateOrderStatus = mutation({
       summary: `Order moved to ${args.status}${trimmedNotes ? `: ${trimmedNotes}` : ""}`,
       createdAt: now
     });
+    await refreshSupplierAnalyticsForOrder(ctx, args.orderId, order.updatedAt);
 
     if (args.status === "receiptConfirmed") {
       await notifyOrganization(ctx, order.supplierOrganizationId, {
@@ -192,28 +233,39 @@ export const listOrdersForSupplierActor = query({
 
     const orders = await ctx.db
       .query("orders")
-      .withIndex("by_supplier", (q) => q.eq("supplierOrganizationId", supplierOrganizationId))
-      .collect();
-    orders.sort((a, b) => b.updatedAt - a.updatedAt);
+      .withIndex("by_supplier_updated_at", (q) => q.eq("supplierOrganizationId", supplierOrganizationId))
+      .order("desc")
+      .take(ORDER_LIST_LIMIT);
 
-    return await Promise.all(
-      orders.map(async (order) => {
-        const totals = await loadOrderTotals(ctx, order.purchaseOrderId);
-        const purchaseOrder = await ctx.db.get(order.purchaseOrderId);
-        const clientOrg = await ctx.db.get(order.clientOrganizationId);
-        return {
-          _id: order._id,
-          status: order.status,
-          createdAt: order.createdAt,
-          updatedAt: order.updatedAt,
-          purchaseOrderId: order.purchaseOrderId,
-          rfqId: purchaseOrder?.rfqId ?? null,
-          clientAnonymousId: clientOrg?.clientAnonymousId ?? "—",
-          clientTotal: totals.clientTotal,
-          lineItemCount: totals.lineItemCount
-        };
-      })
-    );
+    return await Promise.all(orders.map((order) => buildSupplierOrderRow(ctx, order)));
+  }
+});
+
+export const listOrdersForSupplierActorPaginated = query({
+  args: {
+    actorUserId: v.id("users"),
+    paginationOpts: paginationOptsValidator
+  },
+  handler: async (ctx, args) => {
+    const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
+    assertHasAnyPermission(actor, ["order:update_status", "quote:submit"]);
+
+    const supplierOrganizationId = actor.organizationId as Id<"organizations">;
+    const supplier = await ctx.db.get(supplierOrganizationId);
+    if (!supplier || supplier.type !== "supplier") {
+      throw new Error("Only supplier organizations can list supplier orders.");
+    }
+
+    const result = await ctx.db
+      .query("orders")
+      .withIndex("by_supplier_updated_at", (q) => q.eq("supplierOrganizationId", supplierOrganizationId))
+      .order("desc")
+      .paginate(args.paginationOpts);
+
+    return {
+      ...result,
+      page: await Promise.all(result.page.map((order) => buildSupplierOrderRow(ctx, order)))
+    };
   }
 });
 
@@ -281,26 +333,34 @@ export const listOrdersForClientActor = query({
     const clientOrganizationId = actor.organizationId as Id<"organizations">;
     const orders = await ctx.db
       .query("orders")
-      .withIndex("by_client", (q) => q.eq("clientOrganizationId", clientOrganizationId))
-      .collect();
-    orders.sort((a, b) => b.updatedAt - a.updatedAt);
+      .withIndex("by_client_updated_at", (q) => q.eq("clientOrganizationId", clientOrganizationId))
+      .order("desc")
+      .take(ORDER_LIST_LIMIT);
 
-    return await Promise.all(
-      orders.map(async (order) => {
-        const totals = await loadOrderTotals(ctx, order.purchaseOrderId);
-        const supplier = await ctx.db.get(order.supplierOrganizationId);
-        return {
-          _id: order._id,
-          status: order.status,
-          createdAt: order.createdAt,
-          updatedAt: order.updatedAt,
-          purchaseOrderId: order.purchaseOrderId,
-          supplierAnonymousId: supplier?.supplierAnonymousId ?? "—",
-          clientTotal: totals.clientTotal,
-          lineItemCount: totals.lineItemCount
-        };
-      })
-    );
+    return await Promise.all(orders.map((order) => buildClientOrderRow(ctx, order)));
+  }
+});
+
+export const listOrdersForClientActorPaginated = query({
+  args: {
+    actorUserId: v.id("users"),
+    paginationOpts: paginationOptsValidator
+  },
+  handler: async (ctx, args) => {
+    const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
+    assertHasPermission(actor, "rfq:create");
+
+    const clientOrganizationId = actor.organizationId as Id<"organizations">;
+    const result = await ctx.db
+      .query("orders")
+      .withIndex("by_client_updated_at", (q) => q.eq("clientOrganizationId", clientOrganizationId))
+      .order("desc")
+      .paginate(args.paginationOpts);
+
+    return {
+      ...result,
+      page: await Promise.all(result.page.map((order) => buildClientOrderRow(ctx, order)))
+    };
   }
 });
 
@@ -365,6 +425,7 @@ export const openDispute = mutation({
       summary: `Dispute opened: ${subject}`,
       createdAt: now
     });
+    await refreshSupplierAnalyticsForOrder(ctx, args.orderId, order.updatedAt);
 
     const adminOrgs = await ctx.db.query("organizations").withIndex("by_type", (q) => q.eq("type", "admin")).collect();
     for (const adminOrg of adminOrgs) {
@@ -425,7 +486,8 @@ export const listOrdersBySupplier = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("orders")
-      .withIndex("by_supplier", (q) => q.eq("supplierOrganizationId", args.supplierOrganizationId))
-      .collect();
+      .withIndex("by_supplier_updated_at", (q) => q.eq("supplierOrganizationId", args.supplierOrganizationId))
+      .order("desc")
+      .take(200);
   }
 });

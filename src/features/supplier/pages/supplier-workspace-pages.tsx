@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { Check, Download, FileCheck2, Loader2, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -64,15 +64,22 @@ export function SupplierRfqsPage() {
   const { t, i18n } = useTranslation("common");
   const language = i18n.language;
   const { user } = useAuth();
-  const queryArgs = isBetterAuthConfigured && user ? { actorUserId: user.id as Id<"users"> } : "skip";
-  const assignments = useQuery(api.quotes.listSupplierAssignments, queryArgs);
+  const queryArgs = useMemo(() => (isBetterAuthConfigured && user ? { actorUserId: user.id as Id<"users"> } : "skip"), [user]);
+  const {
+    results: assignments,
+    status: assignmentStatus,
+    loadMore: loadMoreAssignments
+  } = usePaginatedQuery(api.quotes.listSupplierAssignmentsPaginated, queryArgs, { initialNumItems: 40 });
   const respond = useMutation(api.quotes.respondToAssignment);
   const [searchValue, setSearchValue] = useState("");
   const [pendingId, setPendingId] = useState<Id<"supplierRfqAssignments"> | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+  const isLoadingAssignments = assignmentStatus === "LoadingFirstPage";
+  const canLoadMoreAssignments = assignmentStatus === "CanLoadMore";
+  const isLoadingMoreAssignments = assignmentStatus === "LoadingMore";
 
   const rows = useMemo(() => {
-    const source = assignments ?? [];
+    const source = assignments;
     const search = searchValue.trim().toLowerCase();
     if (!search) {
       return source;
@@ -84,10 +91,10 @@ export function SupplierRfqsPage() {
   }, [assignments, searchValue]);
 
   const totals = useMemo(() => {
-    const open = (assignments ?? []).filter((entry) => entry.status === "assigned").length;
-    const accepted = (assignments ?? []).filter((entry) => entry.status === "accepted").length;
-    const declined = (assignments ?? []).filter((entry) => entry.status === "declined").length;
-    const total = assignments?.length ?? 0;
+    const open = assignments.filter((entry) => entry.status === "assigned").length;
+    const accepted = assignments.filter((entry) => entry.status === "accepted").length;
+    const declined = assignments.filter((entry) => entry.status === "declined").length;
+    const total = assignments.length;
     return { open, accepted, declined, total };
   }, [assignments]);
 
@@ -173,7 +180,7 @@ export function SupplierRfqsPage() {
       <DashboardCard title={t("navigation.rfq_inbox")}>
         <DataTable
           rows={rows}
-          emptyLabel={assignments === undefined ? localize({ en: "Loading assignments...", ar: "جار تحميل التعيينات..." }, language) : localize({ en: "No assignments yet.", ar: "لا توجد تعيينات بعد." }, language)}
+          emptyLabel={isLoadingAssignments ? localize({ en: "Loading assignments...", ar: "جار تحميل التعيينات..." }, language) : localize({ en: "No assignments yet.", ar: "لا توجد تعيينات بعد." }, language)}
           getRowKey={(entry) => entry._id}
           columns={[
             {
@@ -244,6 +251,14 @@ export function SupplierRfqsPage() {
             }
           ]}
         />
+        {canLoadMoreAssignments || isLoadingMoreAssignments ? (
+          <div className="mt-4 flex justify-center">
+            <Button type="button" variant="outline" disabled={isLoadingMoreAssignments} onClick={() => loadMoreAssignments(40)}>
+              {isLoadingMoreAssignments ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <FileCheck2 className="size-4" aria-hidden="true" />}
+              {localize({ en: "Load more assignments", ar: "تحميل المزيد من التعيينات" }, language)}
+            </Button>
+          </div>
+        ) : null}
       </DashboardCard>
     </SupplierFrame>
   );
@@ -309,12 +324,19 @@ export function SupplierQuotesPage() {
   const { t, i18n } = useTranslation("common");
   const language = i18n.language;
   const { user } = useAuth();
-  const queryArgs = isBetterAuthConfigured && user ? { actorUserId: user.id as Id<"users"> } : "skip";
-  const quotes = useQuery(api.quotes.listSupplierQuotesForActor, queryArgs);
+  const queryArgs = useMemo(() => (isBetterAuthConfigured && user ? { actorUserId: user.id as Id<"users"> } : "skip"), [user]);
+  const {
+    results: quotes,
+    status: quoteListStatus,
+    loadMore: loadMoreQuotes
+  } = usePaginatedQuery(api.quotes.listSupplierQuotesForActorPaginated, queryArgs, { initialNumItems: 40 });
   const [searchValue, setSearchValue] = useState("");
+  const isLoadingQuotes = quoteListStatus === "LoadingFirstPage";
+  const canLoadMoreQuotes = quoteListStatus === "CanLoadMore";
+  const isLoadingMoreQuotes = quoteListStatus === "LoadingMore";
 
   const rows = useMemo(() => {
-    const source = quotes ?? [];
+    const source = quotes;
     const search = searchValue.trim().toLowerCase();
     if (!search) {
       return source;
@@ -326,7 +348,7 @@ export function SupplierQuotesPage() {
   }, [quotes, searchValue]);
 
   const totals = useMemo(() => {
-    const source = quotes ?? [];
+    const source = quotes;
     const submitted = source.length;
     const won = source.filter((quote) => quoteOutcome(quote.status) === "won").length;
     const lost = source.filter((quote) => quoteOutcome(quote.status) === "lost").length;
@@ -358,7 +380,7 @@ export function SupplierQuotesPage() {
       <DashboardCard title={localize({ en: "Quote workspace", ar: "مساحة العروض" }, language)}>
         <DataTable
           rows={rows}
-          emptyLabel={quotes === undefined ? localize({ en: "Loading quotes...", ar: "جار تحميل العروض..." }, language) : localize({ en: "No quotes submitted yet.", ar: "لا توجد عروض مرسلة بعد." }, language)}
+          emptyLabel={isLoadingQuotes ? localize({ en: "Loading quotes...", ar: "جار تحميل العروض..." }, language) : localize({ en: "No quotes submitted yet.", ar: "لا توجد عروض مرسلة بعد." }, language)}
           getRowKey={(row) => row._id}
           columns={[
             { header: "RFQ", cell: (row) => <span className="font-semibold">{row.rfqShortId}</span> },
@@ -370,6 +392,14 @@ export function SupplierQuotesPage() {
             { header: localize({ en: "Outcome", ar: "النتيجة" }, language), cell: (row) => <StatusBadge tone={quoteStatusTone(row.status)}>{quoteStatusLabel(row.status, language)}</StatusBadge> }
           ]}
         />
+        {canLoadMoreQuotes || isLoadingMoreQuotes ? (
+          <div className="mt-4 flex justify-center">
+            <Button type="button" variant="outline" disabled={isLoadingMoreQuotes} onClick={() => loadMoreQuotes(40)}>
+              {isLoadingMoreQuotes ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <FileCheck2 className="size-4" aria-hidden="true" />}
+              {localize({ en: "Load more quotes", ar: "تحميل المزيد من العروض" }, language)}
+            </Button>
+          </div>
+        ) : null}
       </DashboardCard>
     </SupplierFrame>
   );
@@ -401,19 +431,26 @@ export function SupplierOrdersPage() {
   const { t, i18n } = useTranslation("common");
   const language = i18n.language;
   const { user } = useAuth();
-  const queryArgs = isBetterAuthConfigured && user ? { actorUserId: user.id as Id<"users"> } : "skip";
-  const orders = useQuery(api.orders.listOrdersForSupplierActor, queryArgs);
+  const queryArgs = useMemo(() => (isBetterAuthConfigured && user ? { actorUserId: user.id as Id<"users"> } : "skip"), [user]);
+  const {
+    results: orders,
+    status: orderListStatus,
+    loadMore: loadMoreOrders
+  } = usePaginatedQuery(api.orders.listOrdersForSupplierActorPaginated, queryArgs, { initialNumItems: 40 });
   const [searchValue, setSearchValue] = useState("");
+  const isLoadingOrders = orderListStatus === "LoadingFirstPage";
+  const canLoadMoreOrders = orderListStatus === "CanLoadMore";
+  const isLoadingMoreOrders = orderListStatus === "LoadingMore";
 
   const rows = useMemo(() => {
-    const source = orders ?? [];
+    const source = orders;
     const search = searchValue.trim().toLowerCase();
     if (!search) return source;
     return source.filter((order) => [order._id, order.clientAnonymousId, order.status].some((value) => value?.toString().toLowerCase().includes(search)));
   }, [orders, searchValue]);
 
   const totals = useMemo(() => {
-    const source = orders ?? [];
+    const source = orders;
     return {
       active: source.filter((order) => !["completed", "receiptConfirmed"].includes(order.status)).length,
       shippingToday: source.filter((order) => order.status === "shipped").length,
@@ -443,7 +480,7 @@ export function SupplierOrdersPage() {
       <DashboardCard title={localize({ en: "Fulfillment queue", ar: "قائمة التنفيذ" }, language)}>
         <DataTable
           rows={rows}
-          emptyLabel={orders === undefined ? localize({ en: "Loading orders...", ar: "جار تحميل الطلبات..." }, language) : localize({ en: "No orders yet.", ar: "لا توجد طلبات بعد." }, language)}
+          emptyLabel={isLoadingOrders ? localize({ en: "Loading orders...", ar: "جار تحميل الطلبات..." }, language) : localize({ en: "No orders yet.", ar: "لا توجد طلبات بعد." }, language)}
           getRowKey={(order) => order._id}
           columns={[
             {
@@ -460,6 +497,14 @@ export function SupplierOrdersPage() {
             { header: localize({ en: "Status", ar: "الحالة" }, language), cell: (order) => <StatusBadge tone={orderTone(order.status)}>{orderLabel(order.status, language)}</StatusBadge> }
           ]}
         />
+        {canLoadMoreOrders || isLoadingMoreOrders ? (
+          <div className="mt-4 flex justify-center">
+            <Button type="button" variant="outline" disabled={isLoadingMoreOrders} onClick={() => loadMoreOrders(40)}>
+              {isLoadingMoreOrders ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Download className="size-4" aria-hidden="true" />}
+              {localize({ en: "Load more orders", ar: "تحميل المزيد من الطلبات" }, language)}
+            </Button>
+          </div>
+        ) : null}
       </DashboardCard>
     </SupplierFrame>
   );

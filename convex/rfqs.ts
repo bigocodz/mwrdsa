@@ -1,8 +1,27 @@
 import { v } from "convex/values";
-import { mutation, query, type QueryCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import { paginationOptsValidator } from "convex/server";
+import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
+import { refreshSupplierAnalyticsForActivity } from "./analytics";
 import { notifyOrganization } from "./notifications";
 import { assertActiveUser, assertHasPermission, assertSameOrganization } from "./rbac";
+
+const CLIENT_RFQ_LIST_LIMIT = 100;
+const OPERATIONS_RFQ_LIST_LIMIT = 150;
+const SAVED_RFQ_CART_LIST_LIMIT = 50;
+const SAVED_RFQ_CART_MAX_ITEMS = 100;
+const SAVED_RFQ_CART_TTL_MS = 1000 * 60 * 60 * 24 * 7;
+const OPERATIONS_RFQ_STATUSES = [
+  "submitted",
+  "matching",
+  "assigned",
+  "quoting",
+  "adminReview",
+  "released",
+  "selected",
+  "poGenerated",
+  "expired"
+] as const;
 
 const rfqLineItemInput = v.object({
   productId: v.optional(v.id("products")),
@@ -12,9 +31,78 @@ const rfqLineItemInput = v.object({
   unit: v.string()
 });
 
+const savedRfqCartItemInput = v.object({
+  productId: v.optional(v.id("products")),
+  sku: v.optional(v.string()),
+  nameAr: v.optional(v.string()),
+  nameEn: v.optional(v.string()),
+  specificationsAr: v.optional(v.string()),
+  specificationsEn: v.optional(v.string()),
+  descriptionAr: v.optional(v.string()),
+  descriptionEn: v.optional(v.string()),
+  quantity: v.number(),
+  unit: v.string()
+});
+
+type SavedRfqCartItemInput = {
+  productId?: Id<"products">;
+  sku?: string;
+  nameAr?: string;
+  nameEn?: string;
+  specificationsAr?: string;
+  specificationsEn?: string;
+  descriptionAr?: string;
+  descriptionEn?: string;
+  quantity: number;
+  unit: string;
+};
+
 function cleanOptionalText(value?: string) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+async function normalizeSavedRfqCartItems(ctx: QueryCtx | MutationCtx, items: SavedRfqCartItemInput[]) {
+  if (items.length === 0) {
+    throw new Error("Add at least one line item before saving the cart.");
+  }
+  if (items.length > SAVED_RFQ_CART_MAX_ITEMS) {
+    throw new Error(`Saved carts can contain up to ${SAVED_RFQ_CART_MAX_ITEMS} line items.`);
+  }
+
+  const normalized = [];
+  for (const item of items) {
+    if (item.quantity <= 0) {
+      throw new Error("Line item quantity must be greater than zero.");
+    }
+
+    const product = item.productId ? await ctx.db.get(item.productId) : null;
+    if (item.productId && (!product || !product.isVisible)) {
+      throw new Error("One or more catalog products are no longer available.");
+    }
+
+    const descriptionAr = cleanOptionalText(item.descriptionAr);
+    const descriptionEn = cleanOptionalText(item.descriptionEn);
+    const hasDescription = Boolean(descriptionAr || descriptionEn);
+    if (!item.productId && !hasDescription) {
+      throw new Error("Each saved cart line needs a catalog product or description.");
+    }
+
+    normalized.push({
+      productId: item.productId,
+      sku: cleanOptionalText(item.sku) ?? product?.sku,
+      nameAr: cleanOptionalText(item.nameAr) ?? product?.nameAr,
+      nameEn: cleanOptionalText(item.nameEn) ?? product?.nameEn,
+      specificationsAr: cleanOptionalText(item.specificationsAr) ?? product?.specificationsAr,
+      specificationsEn: cleanOptionalText(item.specificationsEn) ?? product?.specificationsEn,
+      descriptionAr,
+      descriptionEn,
+      quantity: Math.max(1, Math.floor(item.quantity)),
+      unit: item.unit.trim() || "unit"
+    });
+  }
+
+  return normalized;
 }
 
 async function summarizeLineItems(ctx: QueryCtx, rfqId: Id<"rfqs">) {
@@ -33,6 +121,146 @@ async function summarizeLineItems(ctx: QueryCtx, rfqId: Id<"rfqs">) {
     totalQuantity,
     items: lineItems
   };
+}
+
+async function buildClientRfqRow(ctx: QueryCtx, rfq: Doc<"rfqs">) {
+  const summary = await summarizeLineItems(ctx, rfq._id);
+  const items = await Promise.all(
+    summary.items.map(async (item) => {
+      const product = item.productId ? await ctx.db.get(item.productId) : null;
+      return {
+        quantity: item.quantity,
+        unit: item.unit,
+        descriptionAr: item.descriptionAr,
+        descriptionEn: item.descriptionEn,
+        product: product
+          ? {
+              _id: product._id,
+              sku: product.sku,
+              nameAr: product.nameAr,
+              nameEn: product.nameEn
+            }
+          : null
+      };
+    })
+  );
+
+  return {
+    _id: rfq._id,
+    status: rfq.status,
+    requiredDeliveryDate: rfq.requiredDeliveryDate,
+    department: rfq.department,
+    branch: rfq.branch,
+    costCenter: rfq.costCenter,
+    notes: rfq.notes,
+    isNonCatalog: rfq.isNonCatalog,
+    createdAt: rfq.createdAt,
+    updatedAt: rfq.updatedAt,
+    lineItemCount: summary.count,
+    totalQuantity: summary.totalQuantity,
+    lineItems: items
+  };
+}
+
+async function buildSavedRfqCartRow(ctx: QueryCtx, cart: Doc<"savedRfqCarts">) {
+  const items = await Promise.all(
+    cart.items.map(async (item) => {
+      const product = item.productId ? await ctx.db.get(item.productId) : null;
+      return {
+        productId: item.productId,
+        sku: item.sku ?? product?.sku,
+        nameAr: item.nameAr ?? product?.nameAr,
+        nameEn: item.nameEn ?? product?.nameEn,
+        specificationsAr: item.specificationsAr ?? product?.specificationsAr,
+        specificationsEn: item.specificationsEn ?? product?.specificationsEn,
+        descriptionAr: item.descriptionAr,
+        descriptionEn: item.descriptionEn,
+        quantity: item.quantity,
+        unit: item.unit
+      };
+    })
+  );
+
+  return {
+    _id: cart._id,
+    name: cart.name,
+    requiredDeliveryDate: cart.requiredDeliveryDate,
+    department: cart.department,
+    branch: cart.branch,
+    costCenter: cart.costCenter,
+    notes: cart.notes,
+    isNonCatalog: cart.isNonCatalog,
+    itemCount: items.length,
+    totalQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
+    items,
+    expiresAt: cart.expiresAt,
+    createdAt: cart.createdAt,
+    updatedAt: cart.updatedAt
+  };
+}
+
+async function buildOperationsRfqRow(ctx: QueryCtx, rfq: Doc<"rfqs">, now: number) {
+  const summary = await summarizeLineItems(ctx, rfq._id);
+  const clientOrg = await ctx.db.get(rfq.clientOrganizationId);
+  const assignments = await ctx.db
+    .query("supplierRfqAssignments")
+    .withIndex("by_rfq", (q) => q.eq("rfqId", rfq._id))
+    .collect();
+  const acceptedAssignments = await ctx.db
+    .query("supplierRfqAssignments")
+    .withIndex("by_rfq_status", (q) => q.eq("rfqId", rfq._id).eq("status", "accepted"))
+    .collect();
+  const quotes = await ctx.db
+    .query("supplierQuotes")
+    .withIndex("by_rfq", (q) => q.eq("rfqId", rfq._id))
+    .collect();
+  const submittedQuotes = await Promise.all([
+    ctx.db
+      .query("supplierQuotes")
+      .withIndex("by_rfq_status", (q) => q.eq("rfqId", rfq._id).eq("status", "submitted"))
+      .collect(),
+    ctx.db
+      .query("supplierQuotes")
+      .withIndex("by_rfq_status", (q) => q.eq("rfqId", rfq._id).eq("status", "underReview"))
+      .collect()
+  ]);
+  const SLA_WINDOW_MS = 1000 * 60 * 60 * 48;
+  const slaBreached = rfq.status !== "released" && rfq.status !== "selected" && rfq.status !== "poGenerated" && now - rfq.createdAt > SLA_WINDOW_MS && assignments.length === 0;
+
+  return {
+    _id: rfq._id,
+    status: rfq.status,
+    isNonCatalog: rfq.isNonCatalog,
+    requiredDeliveryDate: rfq.requiredDeliveryDate,
+    createdAt: rfq.createdAt,
+    updatedAt: rfq.updatedAt,
+    clientName: clientOrg?.name ?? "—",
+    clientAnonymousId: clientOrg?.clientAnonymousId ?? "—",
+    lineItemCount: summary.count,
+    totalQuantity: summary.totalQuantity,
+    assignmentCount: assignments.length,
+    acceptedAssignments: acceptedAssignments.length,
+    submittedQuotes: submittedQuotes[0].length + submittedQuotes[1].length,
+    quoteCount: quotes.length,
+    slaBreached
+  };
+}
+
+async function loadRecentOperationsRfqs(ctx: QueryCtx, limit: number) {
+  const groups = await Promise.all(
+    OPERATIONS_RFQ_STATUSES.map((status) =>
+      ctx.db
+        .query("rfqs")
+        .withIndex("by_status_updated_at", (q) => q.eq("status", status))
+        .order("desc")
+        .take(limit)
+    )
+  );
+
+  return groups
+    .flat()
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, limit);
 }
 
 export const createRfq = mutation({
@@ -171,49 +399,142 @@ export const listRfqsForActor = query({
     const clientOrganizationId = actor.organizationId as Id<"organizations">;
     const rfqs = await ctx.db
       .query("rfqs")
-      .withIndex("by_client", (q) => q.eq("clientOrganizationId", clientOrganizationId))
+      .withIndex("by_client_updated_at", (q) => q.eq("clientOrganizationId", clientOrganizationId))
       .order("desc")
-      .collect();
+      .take(CLIENT_RFQ_LIST_LIMIT);
 
-    return await Promise.all(
-      rfqs.map(async (rfq) => {
-        const summary = await summarizeLineItems(ctx, rfq._id);
-        const items = await Promise.all(
-          summary.items.map(async (item) => {
-            const product = item.productId ? await ctx.db.get(item.productId) : null;
-            return {
-              quantity: item.quantity,
-              unit: item.unit,
-              descriptionAr: item.descriptionAr,
-              descriptionEn: item.descriptionEn,
-              product: product
-                ? {
-                    _id: product._id,
-                    sku: product.sku,
-                    nameAr: product.nameAr,
-                    nameEn: product.nameEn
-                  }
-                : null
-            };
-          })
-        );
-        return {
-          _id: rfq._id,
-          status: rfq.status,
-          requiredDeliveryDate: rfq.requiredDeliveryDate,
-          department: rfq.department,
-          branch: rfq.branch,
-          costCenter: rfq.costCenter,
-          notes: rfq.notes,
-          isNonCatalog: rfq.isNonCatalog,
-          createdAt: rfq.createdAt,
-          updatedAt: rfq.updatedAt,
-          lineItemCount: summary.count,
-          totalQuantity: summary.totalQuantity,
-          lineItems: items
-        };
-      })
-    );
+    return await Promise.all(rfqs.map((rfq) => buildClientRfqRow(ctx, rfq)));
+  }
+});
+
+export const listRfqsForActorPaginated = query({
+  args: {
+    actorUserId: v.id("users"),
+    paginationOpts: paginationOptsValidator
+  },
+  handler: async (ctx, args) => {
+    const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
+    assertHasPermission(actor, "rfq:create");
+
+    const clientOrganizationId = actor.organizationId as Id<"organizations">;
+    const result = await ctx.db
+      .query("rfqs")
+      .withIndex("by_client_updated_at", (q) => q.eq("clientOrganizationId", clientOrganizationId))
+      .order("desc")
+      .paginate(args.paginationOpts);
+
+    return {
+      ...result,
+      page: await Promise.all(result.page.map((rfq) => buildClientRfqRow(ctx, rfq)))
+    };
+  }
+});
+
+export const listSavedRfqCartsForActor = query({
+  args: {
+    actorUserId: v.id("users")
+  },
+  handler: async (ctx, args) => {
+    const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
+    assertHasPermission(actor, "rfq:create");
+
+    const clientOrganizationId = actor.organizationId as Id<"organizations">;
+    const organization = await ctx.db.get(clientOrganizationId);
+    if (!organization || organization.type !== "client") {
+      throw new Error("Only client organizations can manage saved RFQ carts.");
+    }
+
+    const now = Date.now();
+    const carts = await ctx.db
+      .query("savedRfqCarts")
+      .withIndex("by_client_expires_at", (q) => q.eq("clientOrganizationId", clientOrganizationId).gt("expiresAt", now))
+      .order("desc")
+      .take(SAVED_RFQ_CART_LIST_LIMIT);
+
+    carts.sort((a, b) => b.updatedAt - a.updatedAt);
+    return await Promise.all(carts.map((cart) => buildSavedRfqCartRow(ctx, cart)));
+  }
+});
+
+export const saveSavedRfqCartForActor = mutation({
+  args: {
+    actorUserId: v.id("users"),
+    name: v.optional(v.string()),
+    requiredDeliveryDate: v.optional(v.string()),
+    department: v.optional(v.string()),
+    branch: v.optional(v.string()),
+    costCenter: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    isNonCatalog: v.boolean(),
+    items: v.array(savedRfqCartItemInput)
+  },
+  handler: async (ctx, args) => {
+    const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
+    assertHasPermission(actor, "rfq:create");
+
+    const clientOrganizationId = actor.organizationId as Id<"organizations">;
+    const organization = await ctx.db.get(clientOrganizationId);
+    if (!organization || organization.type !== "client") {
+      throw new Error("Only client organizations can manage saved RFQ carts.");
+    }
+
+    const items = await normalizeSavedRfqCartItems(ctx, args.items);
+    const now = Date.now();
+    const savedCartId = await ctx.db.insert("savedRfqCarts", {
+      clientOrganizationId,
+      createdByUserId: args.actorUserId,
+      name: cleanOptionalText(args.name) ?? `RFQ cart ${new Date(now).toISOString().slice(0, 10)}`,
+      requiredDeliveryDate: cleanOptionalText(args.requiredDeliveryDate),
+      department: cleanOptionalText(args.department),
+      branch: cleanOptionalText(args.branch),
+      costCenter: cleanOptionalText(args.costCenter),
+      notes: cleanOptionalText(args.notes),
+      isNonCatalog: args.isNonCatalog,
+      items,
+      expiresAt: now + SAVED_RFQ_CART_TTL_MS,
+      createdAt: now,
+      updatedAt: now
+    });
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      organizationId: clientOrganizationId,
+      action: "rfq_cart.saved",
+      entityType: "savedRfqCart",
+      entityId: savedCartId,
+      summary: `Saved RFQ cart with ${items.length} line item(s)`,
+      createdAt: now
+    });
+
+    return savedCartId;
+  }
+});
+
+export const deleteSavedRfqCartForActor = mutation({
+  args: {
+    actorUserId: v.id("users"),
+    savedCartId: v.id("savedRfqCarts")
+  },
+  handler: async (ctx, args) => {
+    const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
+    assertHasPermission(actor, "rfq:create");
+
+    const savedCart = await ctx.db.get(args.savedCartId);
+    if (!savedCart) {
+      return;
+    }
+    assertSameOrganization(actor, savedCart.clientOrganizationId);
+
+    await ctx.db.delete(args.savedCartId);
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      organizationId: savedCart.clientOrganizationId,
+      action: "rfq_cart.deleted",
+      entityType: "savedRfqCart",
+      entityId: args.savedCartId,
+      summary: `Deleted saved RFQ cart: ${savedCart.name}`,
+      createdAt: Date.now()
+    });
   }
 });
 
@@ -417,47 +738,34 @@ export const listOperationsRfqs = query({
     const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
     assertHasPermission(actor, "rfq:operations");
 
-    const rfqs = await ctx.db.query("rfqs").order("desc").collect();
+    const rfqs = await loadRecentOperationsRfqs(ctx, OPERATIONS_RFQ_LIST_LIMIT);
     const now = Date.now();
-    const SLA_WINDOW_MS = 1000 * 60 * 60 * 48;
 
-    const results = await Promise.all(
-      rfqs.map(async (rfq) => {
-        const summary = await summarizeLineItems(ctx, rfq._id);
-        const clientOrg = await ctx.db.get(rfq.clientOrganizationId);
-        const assignments = await ctx.db
-          .query("supplierRfqAssignments")
-          .withIndex("by_rfq", (q) => q.eq("rfqId", rfq._id))
-          .collect();
-        const quotes = await ctx.db
-          .query("supplierQuotes")
-          .withIndex("by_rfq", (q) => q.eq("rfqId", rfq._id))
-          .collect();
-        const acceptedAssignments = assignments.filter((entry) => entry.status === "accepted").length;
-        const submittedQuotes = quotes.filter((quote) => quote.status === "submitted" || quote.status === "underReview").length;
-        const slaBreached = rfq.status !== "released" && rfq.status !== "selected" && rfq.status !== "poGenerated" && now - rfq.createdAt > SLA_WINDOW_MS && assignments.length === 0;
+    return await Promise.all(rfqs.map((rfq) => buildOperationsRfqRow(ctx, rfq, now)));
+  }
+});
 
-        return {
-          _id: rfq._id,
-          status: rfq.status,
-          isNonCatalog: rfq.isNonCatalog,
-          requiredDeliveryDate: rfq.requiredDeliveryDate,
-          createdAt: rfq.createdAt,
-          updatedAt: rfq.updatedAt,
-          clientName: clientOrg?.name ?? "—",
-          clientAnonymousId: clientOrg?.clientAnonymousId ?? "—",
-          lineItemCount: summary.count,
-          totalQuantity: summary.totalQuantity,
-          assignmentCount: assignments.length,
-          acceptedAssignments,
-          submittedQuotes,
-          quoteCount: quotes.length,
-          slaBreached
-        };
-      })
-    );
+export const listOperationsRfqsPaginated = query({
+  args: {
+    actorUserId: v.id("users"),
+    paginationOpts: paginationOptsValidator
+  },
+  handler: async (ctx, args) => {
+    const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
+    assertHasPermission(actor, "rfq:operations");
 
-    return results.filter((rfq) => rfq.status !== "draft" && rfq.status !== "cancelled");
+    const result = await ctx.db
+      .query("rfqs")
+      .withIndex("by_updated_at")
+      .order("desc")
+      .paginate(args.paginationOpts);
+    const activeRfqs = result.page.filter((rfq) => rfq.status !== "draft" && rfq.status !== "cancelled");
+    const now = Date.now();
+
+    return {
+      ...result,
+      page: await Promise.all(activeRfqs.map((rfq) => buildOperationsRfqRow(ctx, rfq, now)))
+    };
   }
 });
 
@@ -471,11 +779,10 @@ export const listSupplierOrgsForMatching = query({
 
     const suppliers = await ctx.db
       .query("organizations")
-      .withIndex("by_type", (q) => q.eq("type", "supplier"))
-      .collect();
+      .withIndex("by_type_status", (q) => q.eq("type", "supplier").eq("status", "active"))
+      .take(500);
 
     return suppliers
-      .filter((supplier) => supplier.status === "active")
       .map((supplier) => ({
         _id: supplier._id,
         name: supplier.name,
@@ -585,6 +892,7 @@ export const assignSupplierToRfq = mutation({
       bodyAr: "تم إسناد طلب تسعير مجهول إليكم. يرجى المراجعة قبل الموعد النهائي.",
       bodyEn: "An anonymous RFQ has been assigned to you. Please review before the deadline."
     });
+    await refreshSupplierAnalyticsForActivity(ctx, args.supplierOrganizationId, now);
 
     return assignmentId;
   }
@@ -597,8 +905,8 @@ export const listRfqsByClient = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("rfqs")
-      .withIndex("by_client", (q) => q.eq("clientOrganizationId", args.clientOrganizationId))
+      .withIndex("by_client_updated_at", (q) => q.eq("clientOrganizationId", args.clientOrganizationId))
       .order("desc")
-      .collect();
+      .take(200);
   }
 });
