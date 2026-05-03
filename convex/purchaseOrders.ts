@@ -1,11 +1,13 @@
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
-import { mutation, query, type QueryCtx } from "./_generated/server";
+import { mutation, query, type QueryCtx, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { refreshPurchaseOrderAnalytics, refreshSupplierAnalyticsForOrder } from "./analytics";
+import { computeApprovalChain } from "./approvals";
 import { lookupIdempotentResult, recordIdempotentResult } from "./idempotency";
 import { notifyOrganization } from "./notifications";
-import { assertActiveUser, assertHasPermission, assertSameOrganization } from "./rbac";
+import { generateTransactionRef } from "./numbers";
+import { assertActiveUser, assertHasPermission, assertSameOrganization, hasPermission } from "./rbac";
 
 const CLIENT_PURCHASE_ORDER_LIST_LIMIT = 100;
 
@@ -64,24 +66,56 @@ async function loadQuoteSnapshot(
 async function buildPurchaseOrderRow(ctx: QueryCtx, purchaseOrder: Doc<"purchaseOrders">) {
   const snapshot = await loadQuoteSnapshot(ctx, purchaseOrder.selectedQuoteId, purchaseOrder.awardedRfqLineItemIds);
   const supplier = snapshot ? await ctx.db.get(snapshot.supplierOrganizationId) : null;
-  const approvals = await ctx.db
-    .query("approvalInstances")
-    .withIndex("by_po", (q) => q.eq("purchaseOrderId", purchaseOrder._id))
+  const tasks = await ctx.db
+    .query("approvalTasks")
+    .withIndex("by_po_order", (q) => q.eq("purchaseOrderId", purchaseOrder._id))
     .collect();
-  const latest = approvals.length > 0 ? approvals.sort((a, b) => b.createdAt - a.createdAt)[0] : null;
+  tasks.sort((a, b) => a.orderInChain - b.orderInChain);
+  const pendingTask = tasks.find((task) => task.status === "pending");
+  const approvalStatus = pendingTask
+    ? "pending"
+    : tasks.some((task) => task.status === "rejected")
+      ? "rejected"
+      : tasks.length > 0 && tasks.every((task) => task.status === "approved")
+        ? "approved"
+        : "pending";
 
   return {
     _id: purchaseOrder._id,
     rfqId: purchaseOrder.rfqId,
     status: purchaseOrder.status,
+    type: purchaseOrder.type ?? "cpo",
+    transactionRef: purchaseOrder.transactionRef ?? null,
+    linkedPurchaseOrderId: purchaseOrder.linkedPurchaseOrderId ?? null,
     createdAt: purchaseOrder.createdAt,
     updatedAt: purchaseOrder.updatedAt,
     approvedAt: purchaseOrder.approvedAt,
     awardKind: purchaseOrder.awardKind ?? "full",
     clientTotal: snapshot?.clientTotal ?? 0,
     supplierAnonymousId: supplier?.supplierAnonymousId ?? "—",
-    approvalStatus: latest?.status ?? "pending"
+    approvalStatus,
+    chainLength: tasks.length,
+    pendingApproverUserId: pendingTask?.approverUserId ?? null
   };
+}
+
+async function resolveDefaultApproverChain(
+  ctx: MutationCtx,
+  organizationId: Id<"organizations">,
+  actorUserId: Id<"users">
+): Promise<Id<"users">[]> {
+  const chain = await computeApprovalChain(ctx, organizationId, actorUserId);
+  if (chain.length > 0) return chain;
+  // Fallback: pick any other org member with po:approve. If none, the actor
+  // approves their own PO so the workflow still completes.
+  const orgUsers = await ctx.db
+    .query("users")
+    .withIndex("by_organization", (q) => q.eq("organizationId", organizationId))
+    .collect();
+  const fallback = orgUsers.find(
+    (member) => member._id !== actorUserId && hasPermission(member.roles, "po:approve")
+  );
+  return [fallback?._id ?? actorUserId];
 }
 
 export const generatePoFromSelectedQuote = mutation({
@@ -155,35 +189,60 @@ export const generatePoFromSelectedQuote = mutation({
         throw new Error("Awarded quote is no longer in a selected state.");
       }
 
-      const purchaseOrderId = await ctx.db.insert("purchaseOrders", {
+      const transactionRef = generateTransactionRef(now);
+      const cpoId = await ctx.db.insert("purchaseOrders", {
         rfqId: args.rfqId,
         selectedQuoteId: quoteId,
         clientOrganizationId: rfq.clientOrganizationId,
         status: "pendingApproval",
+        type: "cpo",
+        transactionRef,
         termsTemplateId: args.termsTemplateId,
         awardedRfqLineItemIds: isSplit ? lineItemIds : undefined,
         awardKind: isSplit ? "split" : "full",
         createdAt: now,
         updatedAt: now
       });
-      purchaseOrderIds.push(purchaseOrderId);
 
-      await ctx.db.insert("approvalInstances", {
-        purchaseOrderId,
-        status: "pending",
+      const spoId = await ctx.db.insert("purchaseOrders", {
+        rfqId: args.rfqId,
+        selectedQuoteId: quoteId,
+        clientOrganizationId: rfq.clientOrganizationId,
+        status: "draft",
+        type: "spo",
+        transactionRef,
+        linkedPurchaseOrderId: cpoId,
+        termsTemplateId: args.termsTemplateId,
+        awardedRfqLineItemIds: isSplit ? lineItemIds : undefined,
+        awardKind: isSplit ? "split" : "full",
         createdAt: now,
         updatedAt: now
       });
+
+      await ctx.db.patch(cpoId, { linkedPurchaseOrderId: spoId });
+      purchaseOrderIds.push(cpoId);
+
+      const approverChain = await resolveDefaultApproverChain(ctx, rfq.clientOrganizationId, args.actorUserId);
+      for (let index = 0; index < approverChain.length; index++) {
+        await ctx.db.insert("approvalTasks", {
+          purchaseOrderId: cpoId,
+          approverUserId: approverChain[index],
+          orderInChain: index,
+          status: index === 0 ? "pending" : "skipped",
+          createdAt: now,
+          updatedAt: now
+        });
+      }
 
       await ctx.db.insert("auditLogs", {
         actorUserId: args.actorUserId,
         organizationId: rfq.clientOrganizationId,
         action: "po.generated",
         entityType: "purchaseOrder",
-        entityId: purchaseOrderId,
+        entityId: cpoId,
         summary: isSplit
-          ? `Purchase order generated for split award (${lineItemIds.length} of ${rfqLineItems.length} line items)`
-          : "Purchase order generated from selected quote",
+          ? `CPO + SPO generated for split award (${lineItemIds.length} of ${rfqLineItems.length} line items, txn ${transactionRef})`
+          : `CPO + SPO generated from selected quote (txn ${transactionRef})`,
         createdAt: now
       });
 
@@ -191,8 +250,8 @@ export const generatePoFromSelectedQuote = mutation({
         type: "po.pending_approval",
         titleAr: "أمر شراء بانتظار الموافقة",
         titleEn: "Purchase order pending approval",
-        bodyAr: `أمر الشراء ${purchaseOrderId.slice(-6).toUpperCase()} بانتظار الموافقة.`,
-        bodyEn: `Purchase order ${purchaseOrderId.slice(-6).toUpperCase()} is awaiting approval.`
+        bodyAr: `أمر الشراء ${cpoId.slice(-6).toUpperCase()} بانتظار الموافقة.`,
+        bodyEn: `Purchase order ${cpoId.slice(-6).toUpperCase()} is awaiting approval.`
       });
     }
 
@@ -215,6 +274,13 @@ export const generatePoFromSelectedQuote = mutation({
   }
 });
 
+function isClientFacingPurchaseOrder(purchaseOrder: Doc<"purchaseOrders">) {
+  // Client-facing list shows the CPO. Legacy rows (no `type` set) predate the
+  // dual-PO split and are also surfaced — their data is stable enough that
+  // hiding them would silently drop history.
+  return purchaseOrder.type !== "spo";
+}
+
 export const listPurchaseOrdersForActor = query({
   args: {
     actorUserId: v.id("users")
@@ -230,7 +296,8 @@ export const listPurchaseOrdersForActor = query({
       .order("desc")
       .take(CLIENT_PURCHASE_ORDER_LIST_LIMIT);
 
-    return await Promise.all(purchaseOrders.map((purchaseOrder) => buildPurchaseOrderRow(ctx, purchaseOrder)));
+    const filtered = purchaseOrders.filter(isClientFacingPurchaseOrder);
+    return await Promise.all(filtered.map((purchaseOrder) => buildPurchaseOrderRow(ctx, purchaseOrder)));
   }
 });
 
@@ -250,9 +317,10 @@ export const listPurchaseOrdersForActorPaginated = query({
       .order("desc")
       .paginate(args.paginationOpts);
 
+    const filteredPage = result.page.filter(isClientFacingPurchaseOrder);
     return {
       ...result,
-      page: await Promise.all(result.page.map((purchaseOrder) => buildPurchaseOrderRow(ctx, purchaseOrder)))
+      page: await Promise.all(filteredPage.map((purchaseOrder) => buildPurchaseOrderRow(ctx, purchaseOrder)))
     };
   }
 });
@@ -275,15 +343,35 @@ export const getPurchaseOrderDetail = query({
     const snapshot = await loadQuoteSnapshot(ctx, purchaseOrder.selectedQuoteId, purchaseOrder.awardedRfqLineItemIds);
     const supplier = snapshot ? await ctx.db.get(snapshot.supplierOrganizationId) : null;
     const rfq = await ctx.db.get(purchaseOrder.rfqId);
-    const approvals = await ctx.db
-      .query("approvalInstances")
-      .withIndex("by_po", (q) => q.eq("purchaseOrderId", args.purchaseOrderId))
+    const approvalTasks = await ctx.db
+      .query("approvalTasks")
+      .withIndex("by_po_order", (q) => q.eq("purchaseOrderId", args.purchaseOrderId))
       .collect();
-    approvals.sort((a, b) => b.createdAt - a.createdAt);
+    approvalTasks.sort((a, b) => a.orderInChain - b.orderInChain);
+    const enrichedTasks = await Promise.all(
+      approvalTasks.map(async (task) => {
+        const approver = await ctx.db.get(task.approverUserId);
+        return {
+          _id: task._id,
+          orderInChain: task.orderInChain,
+          status: task.status,
+          decidedAt: task.decidedAt ?? null,
+          note: task.note ?? null,
+          approverUserId: task.approverUserId,
+          approverName: approver?.name ?? "—",
+          approverEmail: approver?.email ?? "—",
+          createdAt: task.createdAt,
+          updatedAt: task.updatedAt
+        };
+      })
+    );
 
     return {
       _id: purchaseOrder._id,
       status: purchaseOrder.status,
+      type: purchaseOrder.type ?? "cpo",
+      transactionRef: purchaseOrder.transactionRef ?? null,
+      linkedPurchaseOrderId: purchaseOrder.linkedPurchaseOrderId ?? null,
       termsTemplateId: purchaseOrder.termsTemplateId,
       approvedAt: purchaseOrder.approvedAt,
       createdAt: purchaseOrder.createdAt,
@@ -301,12 +389,7 @@ export const getPurchaseOrderDetail = query({
       clientTotal: snapshot?.clientTotal ?? 0,
       leadTimeDays: snapshot?.leadTimeDays ?? 0,
       validUntil: snapshot?.validUntil ?? "",
-      approvals: approvals.map((approval) => ({
-        _id: approval._id,
-        status: approval.status,
-        createdAt: approval.createdAt,
-        updatedAt: approval.updatedAt
-      }))
+      approvalTasks: enrichedTasks
     };
   }
 });
@@ -337,32 +420,68 @@ export const decidePurchaseOrder = mutation({
     }
 
     const now = Date.now();
-    const approvals = await ctx.db
-      .query("approvalInstances")
-      .withIndex("by_po", (q) => q.eq("purchaseOrderId", args.purchaseOrderId))
+    const tasks = await ctx.db
+      .query("approvalTasks")
+      .withIndex("by_po_order", (q) => q.eq("purchaseOrderId", args.purchaseOrderId))
       .collect();
-    const pending = approvals.find((entry) => entry.status === "pending");
-    if (pending) {
-      await ctx.db.patch(pending._id, {
-        status: args.decision === "approved" ? "approved" : "rejected",
-        updatedAt: now
-      });
+    tasks.sort((a, b) => a.orderInChain - b.orderInChain);
+    const pendingTask = tasks.find((task) => task.status === "pending");
+    if (!pendingTask) {
+      throw new Error("Purchase order has no pending approval task.");
+    }
+    if (pendingTask.approverUserId !== args.actorUserId) {
+      throw new Error("Only the next approver in the chain can act on this purchase order.");
     }
 
-    const nextStatus =
-      args.decision === "approved"
-        ? "approved"
-        : args.decision === "rejected"
-          ? "rejected"
-          : "returnedForChanges";
+    let nextPoStatus: "approved" | "rejected" | "returnedForChanges" | "pendingApproval";
+
+    if (args.decision === "approved") {
+      await ctx.db.patch(pendingTask._id, {
+        status: "approved",
+        decidedAt: now,
+        note: trimmedReason,
+        updatedAt: now
+      });
+      const nextTask = tasks.find((task) => task.orderInChain > pendingTask.orderInChain && task.status === "skipped");
+      if (nextTask) {
+        await ctx.db.patch(nextTask._id, { status: "pending", updatedAt: now });
+        nextPoStatus = "pendingApproval";
+      } else {
+        nextPoStatus = "approved";
+      }
+    } else if (args.decision === "rejected") {
+      await ctx.db.patch(pendingTask._id, {
+        status: "rejected",
+        decidedAt: now,
+        note: trimmedReason,
+        updatedAt: now
+      });
+      // Mark every later skipped task as cancelled-equivalent so the chain
+      // is clearly closed. We reuse the "skipped" status since a downstream
+      // approver never had a turn.
+      for (const task of tasks) {
+        if (task.orderInChain > pendingTask.orderInChain && task.status === "skipped") {
+          await ctx.db.patch(task._id, { updatedAt: now });
+        }
+      }
+      nextPoStatus = "rejected";
+    } else {
+      await ctx.db.patch(pendingTask._id, {
+        status: "skipped",
+        decidedAt: now,
+        note: trimmedReason,
+        updatedAt: now
+      });
+      nextPoStatus = "returnedForChanges";
+    }
 
     await ctx.db.patch(args.purchaseOrderId, {
-      status: nextStatus,
-      ...(args.decision === "approved" ? { approvedAt: now } : {}),
+      status: nextPoStatus,
+      ...(nextPoStatus === "approved" ? { approvedAt: now } : {}),
       updatedAt: now
     });
 
-    if (args.decision === "approved") {
+    if (nextPoStatus === "approved") {
       await refreshPurchaseOrderAnalytics(ctx, args.purchaseOrderId);
     }
 
@@ -370,21 +489,25 @@ export const decidePurchaseOrder = mutation({
       actorUserId: args.actorUserId,
       organizationId: purchaseOrder.clientOrganizationId,
       action:
-        args.decision === "approved"
+        nextPoStatus === "approved"
           ? "po.approved"
-          : args.decision === "rejected"
+          : nextPoStatus === "rejected"
             ? "po.rejected"
-            : "po.returned",
+            : nextPoStatus === "returnedForChanges"
+              ? "po.returned"
+              : "po.advanced",
       entityType: "purchaseOrder",
       entityId: args.purchaseOrderId,
       summary:
         args.decision === "approved"
-          ? "Purchase order approved"
+          ? nextPoStatus === "approved"
+            ? "Purchase order approved (final approver)"
+            : `Approval step ${pendingTask.orderInChain + 1} approved`
           : `Purchase order ${args.decision === "rejected" ? "rejected" : "returned"}: ${trimmedReason}`,
       createdAt: now
     });
 
-    return nextStatus;
+    return nextPoStatus;
   }
 });
 
@@ -397,12 +520,15 @@ export const sendPurchaseOrderToSupplier = mutation({
     const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
     assertHasPermission(actor, "po:approve");
 
-    const purchaseOrder = await ctx.db.get(args.purchaseOrderId);
-    if (!purchaseOrder) {
+    const cpo = await ctx.db.get(args.purchaseOrderId);
+    if (!cpo) {
       throw new Error("Purchase order not found.");
     }
-    assertSameOrganization(actor, purchaseOrder.clientOrganizationId);
-    if (purchaseOrder.status !== "approved") {
+    assertSameOrganization(actor, cpo.clientOrganizationId);
+    if (cpo.type === "spo") {
+      throw new Error("Pass the CPO id; the SPO is dispatched automatically.");
+    }
+    if (cpo.status !== "approved") {
       throw new Error("Only approved purchase orders can be sent to suppliers.");
     }
 
@@ -412,11 +538,29 @@ export const sendPurchaseOrderToSupplier = mutation({
       updatedAt: now
     });
 
-    const quote = await ctx.db.get(purchaseOrder.selectedQuoteId);
+    // Locate the paired SPO. Prefer the direct linkedPurchaseOrderId pointer
+    // when present; otherwise fall back to the shared transactionRef.
+    let spo: Doc<"purchaseOrders"> | null = null;
+    if (cpo.linkedPurchaseOrderId) {
+      spo = await ctx.db.get(cpo.linkedPurchaseOrderId);
+    }
+    if (!spo && cpo.transactionRef) {
+      const candidates = await ctx.db
+        .query("purchaseOrders")
+        .withIndex("by_transaction_ref", (q) => q.eq("transactionRef", cpo.transactionRef))
+        .collect();
+      spo = candidates.find((row) => row.type === "spo") ?? null;
+    }
+    if (spo) {
+      await ctx.db.patch(spo._id, { status: "sentToSupplier", updatedAt: now });
+    }
+
+    const orderPurchaseOrderId = spo?._id ?? args.purchaseOrderId;
+    const quote = await ctx.db.get(cpo.selectedQuoteId);
     if (quote) {
       const orderId = await ctx.db.insert("orders", {
-        purchaseOrderId: purchaseOrder._id,
-        clientOrganizationId: purchaseOrder.clientOrganizationId,
+        purchaseOrderId: orderPurchaseOrderId,
+        clientOrganizationId: cpo.clientOrganizationId,
         supplierOrganizationId: quote.supplierOrganizationId,
         status: "pending",
         createdAt: now,
@@ -427,11 +571,13 @@ export const sendPurchaseOrderToSupplier = mutation({
 
     await ctx.db.insert("auditLogs", {
       actorUserId: args.actorUserId,
-      organizationId: purchaseOrder.clientOrganizationId,
+      organizationId: cpo.clientOrganizationId,
       action: "po.sent_to_supplier",
       entityType: "purchaseOrder",
       entityId: args.purchaseOrderId,
-      summary: "Approved PO sent to supplier and order created",
+      summary: spo
+        ? `CPO ${args.purchaseOrderId.slice(-6).toUpperCase()} approved and SPO ${spo._id.slice(-6).toUpperCase()} dispatched (txn ${cpo.transactionRef ?? "n/a"})`
+        : "Approved PO sent to supplier and order created",
       createdAt: now
     });
 

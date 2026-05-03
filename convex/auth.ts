@@ -29,7 +29,11 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
     database: authComponent.adapter(ctx),
     emailAndPassword: {
       enabled: true,
-      disableSignUp: true,
+      // Public signup is permitted but useless without an active users row in
+      // Convex (`getCurrentSession` rejects any Better Auth user that does not
+      // map to a `users` row with status='active'). The activation flow in
+      // `convex/publicAuth.ts` is the only path that produces such a row.
+      disableSignUp: false,
       requireEmailVerification: false
     },
     rateLimit: {
@@ -59,12 +63,12 @@ export const getCurrentSession = query({
       .withIndex("by_email", (q) => q.eq("email", authUser.email))
       .unique();
 
-    if (!user || user.status !== "active") {
+    if (!user || (user.status !== "active" && user.status !== "pendingKyc")) {
       return null;
     }
 
     const organization = await ctx.db.get(user.organizationId);
-    if (!organization || organization.status !== "active") {
+    if (!organization || (organization.status !== "active" && organization.status !== "pendingKyc")) {
       return null;
     }
 

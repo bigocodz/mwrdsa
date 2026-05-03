@@ -202,6 +202,126 @@ Status: implemented.
 - `pnpm dev:client | dev:supplier | dev:backoffice` on ports 5173/5174/5175. `pnpm build` builds all three into `dist/{client,supplier,backoffice}/`.
 - Added isolation contract test that fails if a foreign portal's pages leak into another bundle's router.
 
+## Slice 17 — Dual PO (CPO + SPO + transactionRef)
+
+Status: implemented.
+
+- Schema: `purchaseOrders` gained `type: 'cpo' | 'spo'`, `transactionRef`, and `linkedPurchaseOrderId` (all optional for legacy compat). New indexes: `by_transaction_ref` (paired-PO lookup) and `by_client_type_updated_at` (client list filtering).
+- New module [convex/numbers.ts](convex/numbers.ts) provides `generateTransactionRef`, `generateCpoNumber`, `generateSpoNumber` with the `MWRD-TXN-…` / `MWRD-CPO-…` / `MWRD-SPO-…` shapes from the spec. Slice 19 will replace the random-suffix backstop with a real sequence; the public API stays the same.
+- `generatePoFromSelectedQuote` now emits **two rows per awarded supplier**:
+  - CPO: `type='cpo'`, `status='pendingApproval'`, owns the approvalTasks chain, surfaced to the client.
+  - SPO: `type='spo'`, `status='draft'`, no chain.
+  - Both share the same `transactionRef`. Each row's `linkedPurchaseOrderId` points at the partner.
+  - `purchaseOrderIds` returned to the client only contains CPO ids (the supplier's bundle is discovered through `transactionRef`).
+- `sendPurchaseOrderToSupplier` now refuses an SPO id, looks up the paired SPO via `linkedPurchaseOrderId` (with `by_transaction_ref` fallback), flips the SPO to `sentToSupplier`, and creates the `orders` row with `purchaseOrderId = spoId` so supplier-facing fulfillment queries continue to resolve through the SPO.
+- Client-facing list (`listPurchaseOrdersForActor[Paginated]`) is filtered through the new `isClientFacingPurchaseOrder` helper — SPOs are hidden, legacy un-typed rows still surface.
+- Row builder + detail query now expose `type`, `transactionRef`, `linkedPurchaseOrderId` so future PDF / "view paired SPO" UI can deep-link.
+- Seed updated: demo PO now creates both CPO + SPO with a stable `MWRD-TXN-DEMO-…` ref; load-test seed creates them with `MWRD-TXN-LOAD-…`. Order rows reference the SPO id.
+- Contract test asserts the schema additions, the numbering helpers, dual-PO emission in `generatePoFromSelectedQuote`, the SPO-aware `sendPurchaseOrderToSupplier`, the `isClientFacingPurchaseOrder` filter, and the seed updates.
+
+## Slice 16 — Approval Tree (approvalNodes + approvalTasks + cycle detection)
+
+Status: implemented.
+
+- Schema: removed `approvalInstances`. Added `approvalNodes` (`organizationId`, `memberUserId`, optional `directApproverUserId`, indexed by org / org+member / approver) and `approvalTasks` (`purchaseOrderId`, `approverUserId`, `orderInChain`, `status: pending|approved|rejected|skipped`, optional `decidedAt`/`note`, indexed by po / po+order / po+status / approver+status).
+- Rewrote [convex/approvals.ts](convex/approvals.ts):
+  - `computeApprovalChain(ctx, organizationId, memberUserId)` walks the tree following `directApproverUserId`, deduping via a visited set, capped at `MAX_CHAIN_LENGTH=12` for safety.
+  - `setDirectApprover` (gate `user:invite`) refuses self-approval, cross-org approver, and configurations that would create a cycle. Cycle detection walks upward from the proposed approver and rejects if it reaches the member or hits an existing cyclic chain. Audit-logged.
+  - `listApprovalTreeForActor` returns members with their direct approver + resolved chain + chain length.
+  - `listApprovalTasksForPurchaseOrder` returns the per-step tasks for the client PO detail page.
+- Rewired [convex/purchaseOrders.ts](convex/purchaseOrders.ts):
+  - New `resolveDefaultApproverChain` helper: prefers the configured chain; falls back to "any other org user with `po:approve`"; final fallback is the actor themselves so seed/dev data still produces approvable POs.
+  - `generatePoFromSelectedQuote` now creates one `approvalTasks` row per chain step (first row `pending`, the rest `skipped` until activated).
+  - `decidePurchaseOrder` now requires the actor to be the next pending approver. Approving advances to the next chain step (or finalizes the PO to `approved` if last). Rejecting closes the PO. `returnedForChanges` keeps the chain alive for re-submission. Per-step audit logs.
+  - `getPurchaseOrderDetail` returns the full enriched `approvalTasks[]` (with approver name/email) instead of legacy approval instances.
+  - Row builder reports `approvalStatus`, `chainLength`, and `pendingApproverUserId` for list views.
+- Updated [convex/seed.ts](convex/seed.ts) to seed `approvalTasks` (single self-approval at chain step 0) for both the demo PO and the load-test PO generator.
+- Updated [src/features/orders/pages/client-purchase-order-page.tsx](src/features/orders/pages/client-purchase-order-page.tsx) "Approval chain" card to show the ordered chain with approver, status, and decision time.
+- New page [src/features/account/pages/client-approval-tree-page.tsx](src/features/account/pages/client-approval-tree-page.tsx) at `/client/account/approval-tree`. Org-admin members can pick a direct approver from a dropdown of other members, see the resolved chain, and save. Cycle errors surface inline. Routed in [src/routes/client-router.tsx](src/routes/client-router.tsx) and added to the client nav under `user:invite`.
+- i18n: added `navigation.approval_tree` in EN + AR.
+- Contract test asserts the schema swap, cycle-detection error strings, the `user:invite` gate, the new chain task-creation in PO generation, the strict next-approver guard in `decidePurchaseOrder`, and the route + nav wiring.
+
+## Slice 15 — Backoffice auth split: idle timeout + cross-portal sign-in refusal
+
+Status: implemented.
+
+- Added [src/lib/use-idle-signout.ts](src/lib/use-idle-signout.ts): a portal-agnostic hook that resets a timer on `mousemove`/`mousedown`/`keydown`/`scroll`/`touchstart`/`click`/`visibilitychange`, fires `onIdle` after the threshold, and is gated on `enabled`.
+- [src/lib/auth.tsx](src/lib/auth.tsx) reads `__BUILD_PORTAL__` and passes the per-portal threshold into the hook: 15 min for `backoffice`, 24 h for `client` and `supplier`. On idle, the provider calls `authClient.signOut()` and redirects to `/auth/login?reason=idle`. The threshold constants (`BACKOFFICE_IDLE_TIMEOUT_MS`, `PUBLIC_IDLE_TIMEOUT_MS`) are exported for tests.
+- [src/pages/login-page.tsx](src/pages/login-page.tsx) now:
+  - Reads `getBuildPortalType()` and refuses any signed-in user whose `user.portal !== buildPortal`. The user is force-signed-out so the credential cannot be reused on this domain. A clear notice ("This account is not authorized for this portal.") is rendered — we never redirect them to the matching portal, per the spec.
+  - Renders an idle-signout notice when `?reason=idle` is in the URL.
+  - Resolves `redirectPath` against `portalStartPaths[buildPortal]` instead of always defaulting to `/admin/dashboard`, so a successful client-portal login lands on `/client/dashboard`.
+  - Tracks `loginSuccess` with `portal: buildPortal` so PostHog can split the funnel by portal.
+- Contract test (in `frontend-pagination-contracts.test.ts`) asserts the hook is wired, the per-portal thresholds are present, the cross-portal refusal logic is in `LoginPage`, and the idle redirect uses `?reason=idle`.
+
+## Slice 14 — Leads queue + KYC queue
+
+Status: implemented.
+
+- Schema: extended `users.status` with `callbackCompleted`. Added KYC fields on `users`: `kycSubmittedAt`, `kycDecision` (`approved | rejected | requestedMore`), `kycDecisionNote`, `kycDecidedAt`, `kycDocuments` (array of `{ documentType, storageId?, submittedAt, status }` placeholder records ready for the supplier/client upload UI in a later slice).
+- Onboarding flow updated to match the spec exactly:
+  - `publicRegisterRequest` → user `pendingCallback`, org `pendingCallback`.
+  - `markCallbackComplete` → user `callbackCompleted`, org `pendingKyc`, 7-day activation token issued.
+  - `completeActivation` → user `pendingKyc`, org `pendingKyc`, `kycSubmittedAt=now` so the new queue immediately shows the activated org.
+  - `decideKycReview` (admin, `audit:view`): `approved` → user/org `active`; `rejected` → user/org `suspended` with required reviewer note; `requestedMore` → keeps `pendingKyc` and stores the reviewer note. Audit-logged with `kyc.approved` / `kyc.rejected` / `kyc.more_requested`.
+- Authentication: `getCurrentSession` now accepts `active` and `pendingKyc` so an activated user can complete `/onboarding` and continue using the platform during KYC review. `assertActiveUser` matches. Hard rejects still apply to `suspended`, `invited`, `pendingCallback`, `callbackCompleted`.
+- Backend queries: `listPendingLeads` now spans both `pendingCallback` and `callbackCompleted` (so ops can see leads they have already called but not yet activated). New `listPendingKycReviews` returns `pendingKyc` users with company CR / VAT / submitted documents.
+- UI: new admin pages [admin-leads-page.tsx](src/features/admin/pages/admin-leads-page.tsx) and [admin-kyc-page.tsx](src/features/admin/pages/admin-kyc-page.tsx). Each is a queue table with a per-row Review button that opens a decision card under the table. Leads supports "mark callback complete + notes"; KYC supports approve / reject / request-more with mandatory note for the latter two.
+- Routing: backoffice router registers `/admin/leads` and `/admin/kyc`. Admin nav now lists them under the same `audit:view` gate (so non-superadmin internal users without that permission see neither).
+- Backend contract test asserts the schema additions, the audit-view gate, the activation flow status changes, the new queue index reads, and the routes / nav wiring.
+
+## Slice 13 — Public callback registration + activation + onboarding
+
+Status: implemented.
+
+- Schema: extended `users.status` with `pendingCallback` and `pendingKyc`. Added `users.activationStatus` (`awaitingCallback | callbackCompleted | activated`), `users.activationToken`, `users.activationTokenExpiresAt`, `users.callbackNotes`, `users.phone`, `users.signupSource`. Added `users.by_status_updated_at` and `users.by_activation_token` indexes. Extended `organizations.status` with `pendingCallback` / `pendingKyc`, added `signupSource`, `signupIntent`, `expectedMonthlyVolumeSar`, `crNumber`, `vatNumber`, `onboardingCompleted` and an `organizations.by_status_updated_at` index.
+- New module `convex/publicAuth.ts`:
+  - `publicRegisterRequest` — public mutation. Validates name / email / phone / company. Rate-limited via `RATE_LIMIT_POLICIES.publicRegister`. Creates a pending org + pending user with `status='pendingCallback'`, `activationStatus='awaitingCallback'`. Role is hard-coded to `orgAdmin` (client) or `supplierAdmin` (supplier) — public signup can never produce admin / ops / finance / cs roles.
+  - `markCallbackComplete` — admin-only (`audit:view`). Generates a 7-day activation token, flips user/org to `pendingKyc`, sets `activationStatus='callbackCompleted'`, writes audit log. Returns the token for delivery via the (Phase 3) email channel.
+  - `lookupActivationToken` — public query. Resolves a token to email/name/portal. Rejects expired tokens or tokens whose `activationStatus !== "callbackCompleted"`.
+  - `completeActivation` — public mutation. Validates the token, flips user → `active` / `activated` and clears the token. Org is flipped to `active` so `getCurrentSession` will accept the next login.
+  - `completeOnboarding` — authenticated mutation. Sets CR / VAT / expected volume on the org and marks `onboardingCompleted=true`.
+  - `listPendingLeads` — admin-only feed for the upcoming Leads queue (slice 14).
+- Better Auth: relaxed `disableSignUp` to `false`. Trust boundary stays at `getCurrentSession`, which still rejects any Better Auth user without an active Convex `users` row. The `/activate` page is the only client-side flow that produces such a row.
+- Pages (`src/pages/`):
+  - `register-page.tsx` — shared client/supplier register form with account-type toggle, defaults to the build portal's account type.
+  - `register-thank-you-page.tsx` — confirmation screen.
+  - `activate-page.tsx` — token lookup + password set + Better Auth signUp + `completeActivation`.
+  - `onboarding-page.tsx` — first-login CR / VAT / expected-volume capture.
+- Routing: client and supplier portals each register `/register`, `/register/thank-you`, `/activate`, `/onboarding`. Backoffice intentionally registers none of them; the contract test fails the build if any of those paths leak into `backoffice-router.tsx`.
+- Contract test asserts the schema additions, the role guard in `publicRegisterRequest` (no admin role literals), the `audit:view` gate on `markCallbackComplete`, the activation-token lifecycle in `completeActivation`, and the cross-portal isolation in the routers.
+
+## Slice 12 — Doc cleanup, Moyasar payment stub, storage URL interface
+
+Status: implemented.
+
+- Removed every ZATCA / Fatoora / Tap-Payment reference from `docs/phase1-prd-checklist.md` and `docs/prd-phase1-gap-plan.md`. The gap matrix now lists Moyasar payment stub and storage URL interface as P1 items (both implemented this slice). Phase 1F deliverables drop the ZATCA TLV / Tap stub line.
+- Added `convex/payments.ts` with three mutations: `createPaymentIntent`, `capturePayment`, `refundPayment`.
+  - All three return mock charge ids of the form `moyasar_charge_<ts>_<rand>`.
+  - `createPaymentIntent` is rate-limited via `RATE_LIMIT_POLICIES.paymentIntentCreate` and idempotent on `idempotencyKey`. Replays do not double-create.
+  - `capturePayment` and `refundPayment` validate the charge id starts with `moyasar_charge_` so a forged id from a foreign provider cannot pass.
+  - All three write `payment.intent_created` / `payment.captured` / `payment.refunded` audit log entries scoped to the actor's organization.
+  - All three require `po:approve`. The shared `paymentStatus` validator is exported for the Phase-1F invoice table.
+- Added `convex/storage.ts` with a single query `getDocumentDownloadUrl(actorUserId, entityType, entityId)`.
+  - `entityType` enum covers CPO, SPO, DN, GRN, INV, KYC docs, offer images, master product images.
+  - Each entity type maps to one or more permissions checked via `assertHasAnyPermission`. Suppliers can read SPO/DN, clients can read CPO/GRN/INV, admins can read KYC.
+  - Today returns a mock URL `https://mwrd-mock-storage/documents/<entityType>/<entityId>?token=…&expires=<ts>` with a 5-minute TTL. Phase 3 swaps the implementation behind this signature for real signed CDN URLs (R2 / S3) without touching call sites.
+- Added a backend contract test that fails the build if (a) any `tap_payment` / `zatca` / `fatoora` string sneaks back into `payments.ts` or `storage.ts`, (b) `createPaymentIntent` loses its idempotency / rate-limit / audit wiring, (c) any of the eight document entity types disappear from the storage map.
+
+## Slice 11.7 — Anonymity CI gate
+
+Status: implemented.
+
+- Added `src/lib/anonymity-contracts.test.ts` as a static-analysis CI gate that fails any commit that loosens cross-party anonymity. Seven assertions:
+  1. **Fixture-name guard.** Walks every `convex/*.ts` source file and refuses any hardcoded reference to canonical fixture real names (`AcmeRealCorp`, `GlobexRealLtd`, `FixtureClientReal`, `FixtureSupplierReal`). Locks in the rule that future fixture data may not embed opposing-party real names into shipped code.
+  2. **Client-facing queries — supplier identity guard.** For every client-facing query (`getRfqQuoteComparison`, `listReleasedRfqsForClient[Paginated]`, `listPurchaseOrdersForActor[Paginated]`, `getPurchaseOrderDetail`, `listOrdersForClientActor[Paginated]`), assert no `.name` / `.email` / `.phone` access on a `supplier` / `supplierOrg` variable.
+  3. **Supplier-facing queries — client identity guard.** For every supplier-facing query (`listSupplierAssignments[Paginated]`, `getSupplierAssignmentDetail`, `listSupplierQuotesForActor[Paginated]`, `getQuoteForAssignment`, `listOrdersForSupplierActor[Paginated]`), assert no `.name` / `.email` / `.phone` access on a `client` / `clientOrg` / `clientOrganization` variable.
+  4. **Cross-party row builders.** `buildSupplierOrderRow` and `buildSupplierAssignmentRow` must contain `clientAnonymousId` and never `client*.name`. `buildClientOrderRow` must contain `supplierAnonymousId` and never `supplier*.name`.
+  5. **Client-facing prices.** `getRfqQuoteComparison` and `listReleasedRfqsForClient` must not return `supplierUnitPrice` or `supplierTotalPrice`; must return `clientFinalUnitPrice` / `clientFinalTotalPrice`.
+  6. **Supplier-facing prices.** `getQuoteForAssignment` must not return `clientFinalUnitPrice` / `clientFinalTotalPrice` / margin fields.
+  7. **Admin-only queues.** `listSubmittedQuotesForRfq` is the only path that may surface real names, and only behind the `quote:apply_margin` permission.
+- Future cross-party queries are added to the gate's `CLIENT_FACING_QUERIES` / `SUPPLIER_FACING_QUERIES` arrays so they automatically get audited.
+
 ## Slice 11.6 — SaaS guarantees: idempotency + rate limits + scheduler + observability
 
 Status: implemented.

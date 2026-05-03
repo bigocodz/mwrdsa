@@ -12,7 +12,7 @@ The current repo is a single React/Vite app with shared portal shell routes for 
 - RFQ creation, non-catalog request line items, attachments, supplier assignment, supplier quotes, admin margin review, quote release, client comparison, quote selection, PO approval, supplier order tracking, audit logs, notifications, and demo seed data.
 - Client/admin/supplier reporting surfaces added in Step 14.
 
-The PRD Phase 1 target is broader and structurally different: Turborepo, three separate web apps, one Expo mobile app, shared public auth package, separate backoffice auth, in-memory mock data swap point, master catalog plus supplier offers, auto-quote engine, split awards, bundles, saved carts, company catalogs, account management, approval tree, dual PO, DN/GRN/Invoice, three-way match, and stubs for ZATCA/Tap/notifications.
+The PRD Phase 1 target is broader and structurally different: three separately deployable web apps, master catalog plus supplier offers, auto-quote engine, split awards, bundles, saved carts, company catalogs, account management, approval tree, dual PO, DN/GRN/Invoice, three-way match, and stubs for Moyasar payment and notifications. ZATCA / Fatoora is explicitly out of scope.
 
 ## Critical Architecture Gap
 
@@ -50,8 +50,8 @@ Recommendation: choose Option A unless there is a hard investor/engineering requ
 | Dual PO | Client CPO + supplier SPO linked by `transaction_ref` | Single purchase order | P1 |
 | GRN/Invoice | GRN and invoice lifecycle | Missing | P1 |
 | Three-way match | PO x GRN x Invoice variance review | Missing | P1 |
-| ZATCA stub | TLV generator returns null | Missing | P2 |
-| Tap stub | Mock payment intent | Missing | P2 |
+| Moyasar payment stub | `createPaymentIntent` / `capturePayment` / `refundPayment` returning mock charge ids | Implemented in `convex/payments.ts` | P1 |
+| Storage URL interface | `getDocumentDownloadUrl` returning mock blob URL today, signed CDN URL later | Implemented in `convex/storage.ts` | P1 |
 | Notification stubs | Email/SMS/push stubs with in-app notification | In-app notifications exist; external stubs missing | P2 |
 | Leads queue | Signup callback queue | Missing | P0 |
 | KYC queue | Post-callback document verification | Missing | P1 |
@@ -169,9 +169,8 @@ Deliverables:
 - Goods Receipt Note confirmation by client.
 - Invoice entity and lifecycle.
 - Three-way match queue with 2% variance tolerance.
-- PDF rendering stubs for CPO, SPO, DN, GRN, INV.
-- ZATCA TLV stub returning `null`.
-- Tap payment intent stub returning mock ID/status.
+- PDF rendering stubs for CPO, SPO, DN, GRN, INV via the storage URL interface.
+- Moyasar payment intent stub returning mock charge id and status.
 
 Exit criteria:
 

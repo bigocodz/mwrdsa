@@ -1,4 +1,5 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
+import { ClientApprovalTreePage } from "@/features/account/pages/client-approval-tree-page";
 import { ClientCatalogPage } from "@/features/catalog/pages/client-catalog-page";
 import { ClientOrderDetailPage } from "@/features/orders/pages/client-order-detail-page";
 import { ClientOrdersPage } from "@/features/orders/pages/client-orders-page";
@@ -9,8 +10,12 @@ import { ClientQuotesPage } from "@/features/quotes/pages/client-quotes-page";
 import { ClientDashboardPage } from "@/features/rfq/pages/client-dashboard-page";
 import { ClientRfqDetailPage } from "@/features/rfq/pages/client-rfq-detail-page";
 import { ClientRfqsPage } from "@/features/rfq/pages/client-rfqs-page";
+import { ActivatePage } from "@/pages/activate-page";
 import { LoginPage } from "@/pages/login-page";
 import { NotFoundPage } from "@/pages/not-found-page";
+import { OnboardingPage } from "@/pages/onboarding-page";
+import { RegisterPage } from "@/pages/register-page";
+import { RegisterThankYouPage } from "@/pages/register-thank-you-page";
 import { UnauthorizedPage } from "@/pages/unauthorized-page";
 import { ProtectedRoute } from "@/routes/protected-route";
 
@@ -20,6 +25,10 @@ export const clientRouter = createBrowserRouter([
     element: <Navigate to="/client" replace />
   },
   { path: "/auth/login", element: <LoginPage /> },
+  { path: "/register", element: <RegisterPage /> },
+  { path: "/register/thank-you", element: <RegisterThankYouPage /> },
+  { path: "/activate", element: <ActivatePage /> },
+  { path: "/onboarding", element: <OnboardingPage /> },
   { path: "/unauthorized", element: <UnauthorizedPage /> },
   {
     path: "/client",
@@ -35,7 +44,8 @@ export const clientRouter = createBrowserRouter([
       { path: "orders", element: <ClientOrdersPage /> },
       { path: "orders/po/:purchaseOrderId", element: <ClientPurchaseOrderPage /> },
       { path: "orders/:orderId", element: <ClientOrderDetailPage /> },
-      { path: "reports", element: <ClientReportsPage /> }
+      { path: "reports", element: <ClientReportsPage /> },
+      { path: "account/approval-tree", element: <ClientApprovalTreePage /> }
     ]
   },
   { path: "*", element: <NotFoundPage /> }

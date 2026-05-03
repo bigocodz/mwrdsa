@@ -16,9 +16,12 @@
     "performance": "Performance",
     "reports": "Reports",
     "operations": "Operations",
+    "leads": "Leads",
+    "kyc": "KYC",
     "clients": "Clients",
     "suppliers": "Suppliers",
-    "audit": "Audit"
+    "audit": "Audit",
+    "approval_tree": "Approval tree"
   },
   "client": {
     "title": "Client Portal",

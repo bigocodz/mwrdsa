@@ -95,4 +95,27 @@ describe("frontend pagination contracts", () => {
     expect(protectedRoute).toContain("getBuildPortalType");
     expect(protectedRoute).toContain("buildPortal !== portal");
   });
+
+  it("enforces portal-aware idle timeouts and refuses cross-portal sign-in", () => {
+    const idle = readSource("src/lib/use-idle-signout.ts");
+    const auth = readSource("src/lib/auth.tsx");
+    const login = readSource("src/pages/login-page.tsx");
+
+    expect(idle).toContain("useIdleSignOut");
+    expect(idle).toContain("IDLE_EVENTS");
+    expect(idle).toContain("visibilitychange");
+
+    expect(auth).toContain("getPortalIdleTimeoutMs");
+    expect(auth).toContain("BACKOFFICE_IDLE_TIMEOUT_MS = 15 * 60 * 1000");
+    expect(auth).toContain("PUBLIC_IDLE_TIMEOUT_MS = 24 * 60 * 60 * 1000");
+    expect(auth).toContain("useIdleSignOut(");
+    expect(auth).toContain("reason=idle");
+
+    expect(login).toContain("getBuildPortalType");
+    expect(login).toContain("user.portal !== buildPortal");
+    expect(login).toContain("This account is not authorized for this portal");
+    expect(login).toContain("void signOut()");
+    expect(login).toContain('reason") === "idle"');
+    expect(login).toContain("crossPortalNotice");
+  });
 });

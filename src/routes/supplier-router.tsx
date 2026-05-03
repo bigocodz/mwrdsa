@@ -9,8 +9,12 @@ import {
   SupplierQuotesPage,
   SupplierRfqsPage
 } from "@/features/supplier/pages/supplier-workspace-pages";
+import { ActivatePage } from "@/pages/activate-page";
 import { LoginPage } from "@/pages/login-page";
 import { NotFoundPage } from "@/pages/not-found-page";
+import { OnboardingPage } from "@/pages/onboarding-page";
+import { RegisterPage } from "@/pages/register-page";
+import { RegisterThankYouPage } from "@/pages/register-thank-you-page";
 import { UnauthorizedPage } from "@/pages/unauthorized-page";
 import { ProtectedRoute } from "@/routes/protected-route";
 
@@ -20,6 +24,10 @@ export const supplierRouter = createBrowserRouter([
     element: <Navigate to="/supplier" replace />
   },
   { path: "/auth/login", element: <LoginPage /> },
+  { path: "/register", element: <RegisterPage /> },
+  { path: "/register/thank-you", element: <RegisterThankYouPage /> },
+  { path: "/activate", element: <ActivatePage /> },
+  { path: "/onboarding", element: <OnboardingPage /> },
   { path: "/unauthorized", element: <UnauthorizedPage /> },
   {
     path: "/supplier",

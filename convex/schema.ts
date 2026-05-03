@@ -2,7 +2,24 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 const organizationType = v.union(v.literal("client"), v.literal("supplier"), v.literal("admin"));
-const organizationStatus = v.union(v.literal("active"), v.literal("suspended"), v.literal("pending"), v.literal("closed"));
+const organizationStatus = v.union(
+  v.literal("active"),
+  v.literal("suspended"),
+  v.literal("pending"),
+  v.literal("pendingCallback"),
+  v.literal("pendingKyc"),
+  v.literal("closed")
+);
+const signupSource = v.union(
+  v.literal("clientForm"),
+  v.literal("supplierForm"),
+  v.literal("adminInvited")
+);
+const userActivationStatus = v.union(
+  v.literal("awaitingCallback"),
+  v.literal("callbackCompleted"),
+  v.literal("activated")
+);
 const language = v.union(v.literal("ar"), v.literal("en"));
 const role = v.union(
   v.literal("superAdmin"),
@@ -91,11 +108,18 @@ export default defineSchema({
     supplierAnonymousId: v.optional(v.string()),
     status: organizationStatus,
     defaultLanguage: language,
+    signupSource: v.optional(signupSource),
+    signupIntent: v.optional(v.string()),
+    expectedMonthlyVolumeSar: v.optional(v.number()),
+    crNumber: v.optional(v.string()),
+    vatNumber: v.optional(v.string()),
+    onboardingCompleted: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number()
   })
     .index("by_type", ["type"])
     .index("by_type_status", ["type", "status"])
+    .index("by_status_updated_at", ["status", "updatedAt"])
     .index("by_client_anonymous_id", ["clientAnonymousId"])
     .index("by_supplier_anonymous_id", ["supplierAnonymousId"]),
 
@@ -105,12 +129,43 @@ export default defineSchema({
     name: v.string(),
     roles: v.array(role),
     language,
-    status: v.union(v.literal("active"), v.literal("invited"), v.literal("suspended")),
+    status: v.union(
+      v.literal("active"),
+      v.literal("invited"),
+      v.literal("suspended"),
+      v.literal("pendingCallback"),
+      v.literal("callbackCompleted"),
+      v.literal("pendingKyc")
+    ),
+    activationStatus: v.optional(userActivationStatus),
+    activationToken: v.optional(v.string()),
+    activationTokenExpiresAt: v.optional(v.number()),
+    callbackNotes: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    signupSource: v.optional(signupSource),
+    kycSubmittedAt: v.optional(v.number()),
+    kycDecision: v.optional(
+      v.union(v.literal("approved"), v.literal("rejected"), v.literal("requestedMore"))
+    ),
+    kycDecisionNote: v.optional(v.string()),
+    kycDecidedAt: v.optional(v.number()),
+    kycDocuments: v.optional(
+      v.array(
+        v.object({
+          documentType: v.string(),
+          storageId: v.optional(v.id("_storage")),
+          submittedAt: v.number(),
+          status: v.union(v.literal("submitted"), v.literal("verified"), v.literal("rejected"))
+        })
+      )
+    ),
     createdAt: v.number(),
     updatedAt: v.number()
   })
     .index("by_email", ["email"])
-    .index("by_organization", ["organizationId"]),
+    .index("by_organization", ["organizationId"])
+    .index("by_status_updated_at", ["status", "updatedAt"])
+    .index("by_activation_token", ["activationToken"]),
 
   categories: defineTable({
     parentCategoryId: v.optional(v.id("categories")),
@@ -328,6 +383,9 @@ export default defineSchema({
     selectedQuoteId: v.id("supplierQuotes"),
     clientOrganizationId: v.id("organizations"),
     status: poStatus,
+    type: v.optional(v.union(v.literal("cpo"), v.literal("spo"))),
+    transactionRef: v.optional(v.string()),
+    linkedPurchaseOrderId: v.optional(v.id("purchaseOrders")),
     termsTemplateId: v.optional(v.string()),
     awardedRfqLineItemIds: v.optional(v.array(v.id("rfqLineItems"))),
     awardKind: v.optional(v.union(v.literal("full"), v.literal("split"))),
@@ -338,19 +396,44 @@ export default defineSchema({
     .index("by_client", ["clientOrganizationId"])
     .index("by_status", ["status"])
     .index("by_rfq", ["rfqId"])
+    .index("by_transaction_ref", ["transactionRef"])
+    .index("by_client_type_updated_at", ["clientOrganizationId", "type", "updatedAt"])
     .index("by_client_updated_at", ["clientOrganizationId", "updatedAt"])
     .index("by_client_status_updated_at", ["clientOrganizationId", "status", "updatedAt"])
     .index("by_client_approved_at", ["clientOrganizationId", "approvedAt"])
     .index("by_approved_at", ["approvedAt"]),
 
-  approvalInstances: defineTable({
+  approvalNodes: defineTable({
+    organizationId: v.id("organizations"),
+    memberUserId: v.id("users"),
+    directApproverUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number()
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_organization_member", ["organizationId", "memberUserId"])
+    .index("by_member", ["memberUserId"])
+    .index("by_approver", ["directApproverUserId"]),
+
+  approvalTasks: defineTable({
     purchaseOrderId: v.id("purchaseOrders"),
-    status: v.union(v.literal("pending"), v.literal("approved"), v.literal("rejected"), v.literal("cancelled")),
+    approverUserId: v.id("users"),
+    orderInChain: v.number(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("rejected"),
+      v.literal("skipped")
+    ),
+    decidedAt: v.optional(v.number()),
+    note: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number()
   })
     .index("by_po", ["purchaseOrderId"])
-    .index("by_po_status", ["purchaseOrderId", "status"]),
+    .index("by_po_order", ["purchaseOrderId", "orderInChain"])
+    .index("by_po_status", ["purchaseOrderId", "status"])
+    .index("by_approver_status", ["approverUserId", "status"]),
 
   orders: defineTable({
     purchaseOrderId: v.id("purchaseOrders"),

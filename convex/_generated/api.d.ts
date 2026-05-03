@@ -18,10 +18,13 @@ import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as idempotency from "../idempotency.js";
 import type * as notifications from "../notifications.js";
+import type * as numbers from "../numbers.js";
 import type * as observability from "../observability.js";
 import type * as offers from "../offers.js";
 import type * as orders from "../orders.js";
 import type * as orgs from "../orgs.js";
+import type * as payments from "../payments.js";
+import type * as publicAuth from "../publicAuth.js";
 import type * as purchaseOrders from "../purchaseOrders.js";
 import type * as quotes from "../quotes.js";
 import type * as rateLimits from "../rateLimits.js";
@@ -29,6 +32,7 @@ import type * as rbac from "../rbac.js";
 import type * as rfqs from "../rfqs.js";
 import type * as scheduled from "../scheduled.js";
 import type * as seed from "../seed.js";
+import type * as storage from "../storage.js";
 import type * as users from "../users.js";
 
 import type {
@@ -48,10 +52,13 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   idempotency: typeof idempotency;
   notifications: typeof notifications;
+  numbers: typeof numbers;
   observability: typeof observability;
   offers: typeof offers;
   orders: typeof orders;
   orgs: typeof orgs;
+  payments: typeof payments;
+  publicAuth: typeof publicAuth;
   purchaseOrders: typeof purchaseOrders;
   quotes: typeof quotes;
   rateLimits: typeof rateLimits;
@@ -59,6 +66,7 @@ declare const fullApi: ApiFromModules<{
   rfqs: typeof rfqs;
   scheduled: typeof scheduled;
   seed: typeof seed;
+  storage: typeof storage;
   users: typeof users;
 }>;
 

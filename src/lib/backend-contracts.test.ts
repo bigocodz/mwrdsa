@@ -160,6 +160,215 @@ describe("backend scale contracts", () => {
     expect(exportedBlock(rfqs, "deleteSavedRfqCartForActor")).toContain("rfq_cart.deleted");
   });
 
+  it("keeps the dual-PO model (CPO + SPO + transactionRef) wired", () => {
+    const schema = readSource("convex/schema.ts");
+    const purchaseOrders = readSource("convex/purchaseOrders.ts");
+    const numbers = readSource("convex/numbers.ts");
+    const seed = readSource("convex/seed.ts");
+
+    expect(schema).toContain('type: v.optional(v.union(v.literal("cpo"), v.literal("spo")))');
+    expect(schema).toContain("transactionRef: v.optional(v.string())");
+    expect(schema).toContain('linkedPurchaseOrderId: v.optional(v.id("purchaseOrders"))');
+    expect(schema).toContain('index("by_transaction_ref"');
+    expect(schema).toContain('index("by_client_type_updated_at"');
+
+    expect(numbers).toContain("MWRD-TXN-");
+    expect(numbers).toContain("MWRD-CPO-");
+    expect(numbers).toContain("MWRD-SPO-");
+    expect(numbers).toContain("generateTransactionRef");
+
+    const generate = exportedBlock(purchaseOrders, "generatePoFromSelectedQuote");
+    expect(generate).toContain('type: "cpo"');
+    expect(generate).toContain('type: "spo"');
+    expect(generate).toContain("generateTransactionRef");
+    expect(generate).toContain("linkedPurchaseOrderId: cpoId");
+
+    const send = exportedBlock(purchaseOrders, "sendPurchaseOrderToSupplier");
+    expect(send).toContain("Pass the CPO id; the SPO is dispatched automatically.");
+    expect(send).toContain("by_transaction_ref");
+    expect(send).toContain('purchaseOrderId: orderPurchaseOrderId');
+
+    expect(purchaseOrders).toContain("isClientFacingPurchaseOrder");
+
+    expect(seed).toContain("demoTransactionRef");
+    expect(seed).toContain('type: "cpo"');
+    expect(seed).toContain('type: "spo"');
+    expect(seed).toContain("purchaseOrderId: spoId");
+  });
+
+  it("keeps Approval Tree (approvalNodes + approvalTasks) wired with cycle detection", () => {
+    const schema = readSource("convex/schema.ts");
+    const approvals = readSource("convex/approvals.ts");
+    const purchaseOrders = readSource("convex/purchaseOrders.ts");
+    const clientRouter = readSource("src/routes/client-router.tsx");
+    const clientNav = readSource("src/features/rfq/hooks/use-client-nav.tsx");
+
+    expect(schema).toContain("approvalNodes: defineTable");
+    expect(schema).toContain("approvalTasks: defineTable");
+    expect(schema).not.toContain("approvalInstances:");
+    expect(schema).toContain('index("by_organization_member"');
+    expect(schema).toContain('index("by_po_order"');
+    expect(schema).toContain('index("by_approver_status"');
+
+    expect(approvals).toContain("computeApprovalChain");
+    const setApprover = exportedBlock(approvals, "setDirectApprover");
+    expect(setApprover).toContain("Approver chain would create a cycle.");
+    expect(setApprover).toContain("A user cannot approve themselves.");
+    expect(setApprover).toContain("Approver must belong to the same organization.");
+    expect(setApprover).toContain('assertHasPermission(actor, "user:invite")');
+    expect(setApprover).toContain("approval_node.set");
+
+    const tree = exportedBlock(approvals, "listApprovalTreeForActor");
+    expect(tree).toContain("computeApprovalChain");
+
+    const generate = exportedBlock(purchaseOrders, "generatePoFromSelectedQuote");
+    expect(generate).toContain("resolveDefaultApproverChain");
+    expect(generate).toContain('"approvalTasks"');
+    expect(generate).toContain('orderInChain: index');
+
+    const decide = exportedBlock(purchaseOrders, "decidePurchaseOrder");
+    expect(decide).toContain("Only the next approver in the chain can act on this purchase order.");
+    expect(decide).toContain("Purchase order has no pending approval task.");
+    expect(decide).not.toContain("approvalInstances");
+
+    expect(clientRouter).toContain("ClientApprovalTreePage");
+    expect(clientRouter).toContain('path: "account/approval-tree"');
+    expect(clientNav).toContain('"/client/account/approval-tree"');
+  });
+
+  it("keeps Leads + KYC queues wired into the backoffice", () => {
+    const schema = readSource("convex/schema.ts");
+    const publicAuth = readSource("convex/publicAuth.ts");
+    const backofficeRouter = readSource("src/routes/backoffice-router.tsx");
+    const adminNav = readSource("src/features/admin/hooks/use-admin-nav.tsx");
+
+    expect(schema).toContain('v.literal("callbackCompleted")');
+    expect(schema).toContain("kycSubmittedAt");
+    expect(schema).toContain("kycDecision");
+    expect(schema).toContain("kycDecisionNote");
+    expect(schema).toContain("kycDecidedAt");
+    expect(schema).toContain("kycDocuments");
+
+    const callback = exportedBlock(publicAuth, "markCallbackComplete");
+    expect(callback).toContain('status: "callbackCompleted"');
+
+    const activation = exportedBlock(publicAuth, "completeActivation");
+    expect(activation).toContain('status: "pendingKyc"');
+    expect(activation).toContain("kycSubmittedAt: now");
+
+    const leads = exportedBlock(publicAuth, "listPendingLeads");
+    expect(leads).toContain('"pendingCallback"');
+    expect(leads).toContain('"callbackCompleted"');
+    expect(leads).toContain('assertHasPermission(actor, "audit:view")');
+
+    const kycList = exportedBlock(publicAuth, "listPendingKycReviews");
+    expect(kycList).toContain('"pendingKyc"');
+    expect(kycList).toContain("crNumber");
+    expect(kycList).toContain("vatNumber");
+
+    const decide = exportedBlock(publicAuth, "decideKycReview");
+    expect(decide).toContain("kyc.approved");
+    expect(decide).toContain("kyc.rejected");
+    expect(decide).toContain("kyc.more_requested");
+    expect(decide).toContain('status: "active"');
+    expect(decide).toContain('status: "suspended"');
+    expect(decide).toContain('A note is required when rejecting or requesting more documents.');
+
+    expect(backofficeRouter).toContain('path: "leads"');
+    expect(backofficeRouter).toContain('path: "kyc"');
+    expect(adminNav).toContain('"/admin/leads"');
+    expect(adminNav).toContain('"/admin/kyc"');
+  });
+
+  it("keeps the public callback registration flow wired and isolated from backoffice", () => {
+    const schema = readSource("convex/schema.ts");
+    const publicAuth = readSource("convex/publicAuth.ts");
+    const auth = readSource("convex/auth.ts");
+    const clientRouter = readSource("src/routes/client-router.tsx");
+    const supplierRouter = readSource("src/routes/supplier-router.tsx");
+    const backofficeRouter = readSource("src/routes/backoffice-router.tsx");
+
+    expect(schema).toContain('v.literal("pendingCallback")');
+    expect(schema).toContain('v.literal("pendingKyc")');
+    expect(schema).toContain("activationStatus");
+    expect(schema).toContain("activationToken");
+    expect(schema).toContain("activationTokenExpiresAt");
+    expect(schema).toContain("callbackNotes");
+    expect(schema).toContain("crNumber");
+    expect(schema).toContain("vatNumber");
+    expect(schema).toContain("onboardingCompleted");
+    expect(schema).toContain('index("by_activation_token", ["activationToken"])');
+
+    const register = exportedBlock(publicAuth, "publicRegisterRequest");
+    expect(register).toContain("RATE_LIMIT_POLICIES.publicRegister");
+    expect(register).toContain('status: "pendingCallback"');
+    expect(register).toContain('activationStatus: "awaitingCallback"');
+    expect(register).toContain('roles: [role]');
+    expect(register).not.toContain('"superAdmin"');
+    expect(register).not.toContain('"operationsManager"');
+
+    const callback = exportedBlock(publicAuth, "markCallbackComplete");
+    expect(callback).toContain('assertHasPermission(actor, "audit:view")');
+    expect(callback).toContain("activationToken: token");
+    expect(callback).toContain('activationStatus: "callbackCompleted"');
+
+    const lookup = exportedBlock(publicAuth, "lookupActivationToken");
+    expect(lookup).toContain('withIndex("by_activation_token"');
+    expect(lookup).toContain('user.activationStatus !== "callbackCompleted"');
+
+    const complete = exportedBlock(publicAuth, "completeActivation");
+    expect(complete).toContain('status: "pendingKyc"');
+    expect(complete).toContain('activationStatus: "activated"');
+    expect(complete).toContain("activationToken: undefined");
+
+    const onboarding = exportedBlock(publicAuth, "completeOnboarding");
+    expect(onboarding).toContain("onboardingCompleted: true");
+
+    expect(auth).toContain("disableSignUp: false");
+
+    expect(clientRouter).toContain('path: "/register"');
+    expect(clientRouter).toContain('path: "/register/thank-you"');
+    expect(clientRouter).toContain('path: "/activate"');
+    expect(clientRouter).toContain('path: "/onboarding"');
+    expect(supplierRouter).toContain('path: "/register"');
+    expect(supplierRouter).toContain('path: "/activate"');
+    expect(backofficeRouter).not.toContain('path: "/register"');
+    expect(backofficeRouter).not.toContain('path: "/activate"');
+    expect(backofficeRouter).not.toContain('path: "/onboarding"');
+  });
+
+  it("keeps Moyasar payment stub and storage URL interface in place without ZATCA / Tap", () => {
+    const payments = readSource("convex/payments.ts");
+    const storage = readSource("convex/storage.ts");
+
+    expect(payments).toContain("moyasar");
+    expect(payments).not.toMatch(/\btap[_\s-]?payment/i);
+    expect(payments).not.toMatch(/zatca/i);
+    expect(payments).not.toMatch(/fatoora/i);
+
+    const createIntent = exportedBlock(payments, "createPaymentIntent");
+    expect(createIntent).toContain("idempotencyKey");
+    expect(createIntent).toContain("RATE_LIMIT_POLICIES.paymentIntentCreate");
+    expect(createIntent).toContain("payment.intent_created");
+
+    const capture = exportedBlock(payments, "capturePayment");
+    expect(capture).toContain("payment.captured");
+    expect(capture).toContain("not a recognized Moyasar charge");
+
+    const refund = exportedBlock(payments, "refundPayment");
+    expect(refund).toContain("payment.refunded");
+
+    expect(storage).toContain("getDocumentDownloadUrl");
+    expect(storage).toContain("clientPurchaseOrder");
+    expect(storage).toContain("supplierPurchaseOrder");
+    expect(storage).toContain("deliveryNote");
+    expect(storage).toContain("goodsReceiptNote");
+    expect(storage).toContain("invoice");
+    expect(storage).toContain("kycDocument");
+    expect(storage).toContain("expiresAt");
+    expect(storage).not.toMatch(/zatca/i);
+  });
+
   it("keeps SaaS guarantees: idempotency, rate limits, scheduler, observability", () => {
     const schema = readSource("convex/schema.ts");
     const idempotency = readSource("convex/idempotency.ts");
@@ -239,7 +448,7 @@ describe("backend scale contracts", () => {
     expect(generate).toContain("awardedRfqLineItemIds");
     expect(generate).toContain('awardKind: isSplit ? "split" : "full"');
     expect(generate).toContain("Every line item must be awarded before generating purchase orders.");
-    expect(generate).toContain("purchaseOrderIds.push(purchaseOrderId)");
+    expect(generate).toContain("purchaseOrderIds.push(cpoId)");
 
     expect(purchaseOrders).toContain("scopedRfqLineItemIds");
   });

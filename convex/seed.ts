@@ -551,24 +551,44 @@ export const _seedDemoWorkflowData = internalMutation({
         { rfqLineItemId: completed.lineItemIds[1], supplierUnitPrice: 420, quantity: 12 }
       ]
     });
+    const demoTransactionRef = `MWRD-TXN-DEMO-${Math.floor(atDays(-39))}`;
     const completedPoId = await ctx.db.insert("purchaseOrders", {
       rfqId: completed.rfqId,
       selectedQuoteId: completedQuoteId,
       clientOrganizationId,
       status: "sentToSupplier" as SeedPoStatus,
+      type: "cpo",
+      transactionRef: demoTransactionRef,
       termsTemplateId: "MWRD-DEMO-STANDARD",
       approvedAt: atDays(-38),
       createdAt: atDays(-39),
       updatedAt: atDays(-38)
     });
-    await ctx.db.insert("approvalInstances", {
+    const completedSpoId = await ctx.db.insert("purchaseOrders", {
+      rfqId: completed.rfqId,
+      selectedQuoteId: completedQuoteId,
+      clientOrganizationId,
+      status: "sentToSupplier" as SeedPoStatus,
+      type: "spo",
+      transactionRef: demoTransactionRef,
+      linkedPurchaseOrderId: completedPoId,
+      termsTemplateId: "MWRD-DEMO-STANDARD",
+      approvedAt: atDays(-38),
+      createdAt: atDays(-39),
+      updatedAt: atDays(-38)
+    });
+    await ctx.db.patch(completedPoId, { linkedPurchaseOrderId: completedSpoId });
+    await ctx.db.insert("approvalTasks", {
       purchaseOrderId: completedPoId,
+      approverUserId: clientUser._id,
+      orderInChain: 0,
       status: "approved",
+      decidedAt: atDays(-38),
       createdAt: atDays(-39),
       updatedAt: atDays(-38)
     });
     const completedOrderId = await ctx.db.insert("orders", {
-      purchaseOrderId: completedPoId,
+      purchaseOrderId: completedSpoId,
       clientOrganizationId,
       supplierOrganizationId,
       status: "receiptConfirmed" as SeedOrderStatus,
@@ -931,27 +951,47 @@ export const _seedLoadTestBatch = internalMutation({
         createdAt: approvedAt - 2 * HOUR_MS
       });
 
+      const transactionRef = `MWRD-TXN-LOAD-${approvedAt}-${globalIndex}`;
       const purchaseOrderId = await ctx.db.insert("purchaseOrders", {
         rfqId,
         selectedQuoteId: quoteId,
         clientOrganizationId: client.organizationId,
         status: "sentToSupplier",
+        type: "cpo",
+        transactionRef,
         termsTemplateId: "MWRD-LOAD-STANDARD",
         approvedAt,
         createdAt: approvedAt - DAY_MS,
         updatedAt: approvedAt
       });
+      const spoId = await ctx.db.insert("purchaseOrders", {
+        rfqId,
+        selectedQuoteId: quoteId,
+        clientOrganizationId: client.organizationId,
+        status: "sentToSupplier",
+        type: "spo",
+        transactionRef,
+        linkedPurchaseOrderId: purchaseOrderId,
+        termsTemplateId: "MWRD-LOAD-STANDARD",
+        approvedAt,
+        createdAt: approvedAt - DAY_MS,
+        updatedAt: approvedAt
+      });
+      await ctx.db.patch(purchaseOrderId, { linkedPurchaseOrderId: spoId });
 
-      await ctx.db.insert("approvalInstances", {
+      await ctx.db.insert("approvalTasks", {
         purchaseOrderId,
+        approverUserId: client.userId,
+        orderInChain: 0,
         status: "approved",
+        decidedAt: approvedAt,
         createdAt: approvedAt - DAY_MS,
         updatedAt: approvedAt
       });
 
       const status = orderStatuses[globalIndex % orderStatuses.length];
       const orderId = await ctx.db.insert("orders", {
-        purchaseOrderId,
+        purchaseOrderId: spoId,
         clientOrganizationId: client.organizationId,
         supplierOrganizationId: supplier.organizationId,
         status,

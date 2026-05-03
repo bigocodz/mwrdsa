@@ -1,9 +1,18 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
 import { useConvexAuth, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { authClient, isBetterAuthConfigured } from "@/lib/auth-client";
+import { getBuildPortal } from "@/lib/build-portal";
+import { useIdleSignOut } from "@/lib/use-idle-signout";
 import type { PortalRole, PortalType } from "@/types/auth";
 import type { SupportedLanguage } from "@/lib/i18n";
+
+const BACKOFFICE_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+const PUBLIC_IDLE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+
+export function getPortalIdleTimeoutMs() {
+  return getBuildPortal() === "backoffice" ? BACKOFFICE_IDLE_TIMEOUT_MS : PUBLIC_IDLE_TIMEOUT_MS;
+}
 
 type SessionUser = {
   id: string;
@@ -46,6 +55,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const user = isBetterAuthConfigured ? (sessionUser ?? null) : demoUser;
   const isLoading = isBetterAuthConfigured && (convexAuth.isLoading || (convexAuth.isAuthenticated && sessionUser === undefined));
 
+  const signOut = useCallback(async () => {
+    if (isBetterAuthConfigured) {
+      await authClient.signOut();
+    }
+  }, []);
+
+  useIdleSignOut({
+    thresholdMs: getPortalIdleTimeoutMs(),
+    enabled: isBetterAuthConfigured && Boolean(user),
+    onIdle: () => {
+      void signOut().then(() => {
+        if (typeof window !== "undefined") {
+          window.location.assign("/auth/login?reason=idle");
+        }
+      });
+    }
+  });
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -55,13 +82,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setLanguagePreference: (language) => {
         localStorage.setItem("mwrd-language", language);
       },
-      signOut: async () => {
-        if (isBetterAuthConfigured) {
-          await authClient.signOut();
-        }
-      }
+      signOut
     }),
-    [isLoading, user]
+    [isLoading, signOut, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

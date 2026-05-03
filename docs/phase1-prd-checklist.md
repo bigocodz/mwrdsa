@@ -11,11 +11,11 @@ This checklist tracks product/workflow compliance inside the current Convex/Vite
 ## Auth And Onboarding
 
 - [x] Better Auth protected portal access.
-- [ ] Public client/supplier callback request form.
-- [ ] Admin leads queue.
-- [ ] Admin KYC/document placeholder queue.
-- [ ] First-login company profile onboarding.
-- [ ] Separate backoffice login/session policy.
+- [x] Public client/supplier callback request form.
+- [x] Admin leads queue.
+- [x] Admin KYC/document placeholder queue.
+- [x] First-login company profile onboarding.
+- [x] Separate backoffice login/session policy.
 
 ## Master Catalog And Supplier Offers
 
@@ -50,19 +50,20 @@ This checklist tracks product/workflow compliance inside the current Convex/Vite
 - [ ] Bundles/essentials packs.
 - [ ] Company catalogs.
 - [ ] Address book.
-- [ ] Configurable approval tree.
+- [x] Configurable approval tree.
 
 ## Order And Finance Operations
 
 - [x] Supplier order status tracking.
 - [x] Client receipt confirmation and disputes.
-- [ ] Client CPO and supplier SPO split with transaction reference.
+- [x] Client CPO and supplier SPO split with transaction reference.
 - [ ] Delivery notes.
 - [ ] Goods receipt notes.
 - [ ] Invoices.
 - [ ] Three-way match queue.
 - [ ] PDF rendering stubs for CPO/SPO/DN/GRN/INV.
-- [ ] ZATCA and Tap stubs.
+- [x] Moyasar payment stub interface.
+- [x] Storage download URL interface.
 
 ## Reporting And Scale
 

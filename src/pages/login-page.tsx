@@ -13,6 +13,8 @@ import { Input } from "@/components/ui/input";
 import { analyticsEvents, trackEvent } from "@/lib/analytics";
 import { authClient, isBetterAuthConfigured } from "@/lib/auth-client";
 import { useAuth } from "@/lib/auth";
+import { getBuildPortalType } from "@/lib/build-portal";
+import { localize } from "@/features/rfq/data/client-workflow-data";
 import type { PortalType } from "@/types/auth";
 
 type LoginFormValues = {
@@ -27,11 +29,35 @@ const portalStartPaths: Record<PortalType, string> = {
 };
 
 export function LoginPage() {
-  const { t } = useTranslation("auth");
+  const { t, i18n } = useTranslation("auth");
+  const language = i18n.language;
   const location = useLocation();
   const navigate = useNavigate();
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading, user, signOut } = useAuth();
+  const buildPortal = getBuildPortalType();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const idleNotice =
+    new URLSearchParams(location.search).get("reason") === "idle"
+      ? localize(
+          {
+            en: "You were signed out for inactivity. Please sign in again.",
+            ar: "تم تسجيل خروجك بسبب عدم النشاط. يرجى تسجيل الدخول مرة أخرى."
+          },
+          language
+        )
+      : null;
+  const isCrossPortalUser = Boolean(
+    isBetterAuthConfigured && !isLoading && isAuthenticated && user && user.portal !== buildPortal
+  );
+  const crossPortalNotice = isCrossPortalUser
+    ? localize(
+        {
+          en: "This account is not authorized for this portal.",
+          ar: "هذا الحساب غير مصرح له بالوصول إلى هذه البوابة."
+        },
+        language
+      )
+    : null;
   const loginSchema = useMemo(
     () =>
       z.object({
@@ -53,14 +79,25 @@ export function LoginPage() {
   });
   const redirectPath = useMemo(() => {
     const requestedPath = new URLSearchParams(location.search).get("redirect");
-    return requestedPath?.startsWith("/") && !requestedPath.startsWith("//") ? requestedPath : "/admin/dashboard";
-  }, [location.search]);
+    if (requestedPath?.startsWith("/") && !requestedPath.startsWith("//")) {
+      return requestedPath;
+    }
+    return portalStartPaths[buildPortal];
+  }, [buildPortal, location.search]);
 
   useEffect(() => {
-    if (isBetterAuthConfigured && !isLoading && isAuthenticated && user) {
-      navigate(redirectPath === "/admin/dashboard" ? portalStartPaths[user.portal] : redirectPath, { replace: true });
+    if (!isBetterAuthConfigured || isLoading || !isAuthenticated || !user) {
+      return;
     }
-  }, [isAuthenticated, isLoading, navigate, redirectPath, user]);
+    if (user.portal !== buildPortal) {
+      // Cross-portal sign-in: force sign-out so the credential cannot be used
+      // on this domain. The notice is rendered from `crossPortalNotice` above;
+      // we never redirect them to the matching portal.
+      void signOut();
+      return;
+    }
+    navigate(redirectPath, { replace: true });
+  }, [buildPortal, isAuthenticated, isLoading, navigate, redirectPath, signOut, user]);
 
   const handleLogin = handleSubmit(async (values) => {
     setSubmitError(null);
@@ -81,7 +118,7 @@ export function LoginPage() {
       return;
     }
 
-    trackEvent(analyticsEvents.loginSuccess, { mode: "password" });
+    trackEvent(analyticsEvents.loginSuccess, { mode: "password", portal: buildPortal });
     await authClient.getSession();
   });
 
@@ -99,6 +136,16 @@ export function LoginPage() {
           </div>
         </CardHeader>
         <CardContent>
+          {idleNotice ? (
+            <p className="mb-4 rounded-lg border border-mwrd-sun/40 bg-mwrd-sun/10 px-3 py-2 text-sm font-medium text-mwrd-sun">
+              {idleNotice}
+            </p>
+          ) : null}
+          {crossPortalNotice ? (
+            <p className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
+              {crossPortalNotice}
+            </p>
+          ) : null}
           <form className="grid gap-4" onSubmit={handleLogin}>
             <label className="grid gap-2 text-sm font-medium">
               {t("login.email")}

@@ -16,9 +16,12 @@
     "performance": "الأداء",
     "reports": "التقارير",
     "operations": "العمليات",
+    "leads": "العملاء المحتملون",
+    "kyc": "التحقق",
     "clients": "العملاء",
     "suppliers": "الموردون",
-    "audit": "التدقيق"
+    "audit": "التدقيق",
+    "approval_tree": "سلسلة الموافقات"
   },
   "client": {
     "title": "بوابة العميل",

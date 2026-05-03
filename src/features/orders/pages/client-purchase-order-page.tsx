@@ -227,18 +227,28 @@ export function ClientPurchaseOrderPage() {
             />
           </DashboardCard>
 
-          <DashboardCard title={localize({ en: "Approvals", ar: "الموافقات" }, language)}>
-            {detail.approvals.length === 0 ? (
-              <p className="text-sm text-muted-foreground">{localize({ en: "No approval activity yet.", ar: "لا يوجد نشاط موافقة بعد." }, language)}</p>
+          <DashboardCard title={localize({ en: "Approval chain", ar: "سلسلة الموافقات" }, language)}>
+            {detail.approvalTasks.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{localize({ en: "No approval chain configured.", ar: "لم يتم تكوين سلسلة الموافقات." }, language)}</p>
             ) : (
-              <ul className="flex flex-col gap-2">
-                {detail.approvals.map((approval) => (
-                  <li key={approval._id} className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/30 px-3 py-2">
-                    <span className="text-sm font-semibold">{approval.status}</span>
-                    <span className="text-xs text-muted-foreground">{new Date(approval.updatedAt).toLocaleString()}</span>
+              <ol className="flex flex-col gap-2">
+                {detail.approvalTasks.map((task) => (
+                  <li key={task._id} className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/30 px-3 py-2">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-semibold">
+                        {`${task.orderInChain + 1}. ${task.approverName}`}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{task.approverEmail}</span>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <span className="text-xs font-semibold uppercase">{task.status}</span>
+                      {task.decidedAt ? (
+                        <span className="text-xs text-muted-foreground">{new Date(task.decidedAt).toLocaleString()}</span>
+                      ) : null}
+                    </div>
                   </li>
                 ))}
-              </ul>
+              </ol>
             )}
           </DashboardCard>
         </>

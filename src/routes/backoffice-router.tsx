@@ -1,5 +1,7 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AdminDashboardPage } from "@/features/admin/pages/admin-dashboard-page";
+import { AdminKycPage } from "@/features/admin/pages/admin-kyc-page";
+import { AdminLeadsPage } from "@/features/admin/pages/admin-leads-page";
 import { AdminOfferApprovalsPage } from "@/features/admin/pages/admin-offer-approvals-page";
 import { AdminReportsPage } from "@/features/admin/pages/admin-reports-page";
 import { AdminRfqPricingPage } from "@/features/admin/pages/admin-rfq-pricing-page";
@@ -28,6 +30,8 @@ export const backofficeRouter = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="/admin/dashboard" replace /> },
       { path: "dashboard", element: <AdminDashboardPage /> },
+      { path: "leads", element: <AdminLeadsPage /> },
+      { path: "kyc", element: <AdminKycPage /> },
       { path: "operations", element: <AdminOperationsPage /> },
       { path: "operations/:rfqId", element: <AdminRfqPricingPage /> },
       { path: "clients", element: <AdminClientsPage /> },

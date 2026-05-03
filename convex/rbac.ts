@@ -35,7 +35,7 @@ type Permission =
 
 type UserLike = {
   roles: Role[];
-  status: "active" | "invited" | "suspended";
+  status: "active" | "invited" | "suspended" | "pendingCallback" | "callbackCompleted" | "pendingKyc";
   organizationId: unknown;
 };
 
@@ -59,7 +59,10 @@ const rolePermissionMatrix = {
 } satisfies Record<Role, readonly Permission[]>;
 
 export function assertActiveUser(user: UserLike | null) {
-  if (!user || user.status !== "active") {
+  // Allow `pendingKyc` users to call protected mutations so the platform
+  // remains usable while KYC review is pending. Hard gates (suspended,
+  // invited, pendingCallback, callbackCompleted) still reject.
+  if (!user || (user.status !== "active" && user.status !== "pendingKyc")) {
     throw new Error("Active authenticated user is required.");
   }
 

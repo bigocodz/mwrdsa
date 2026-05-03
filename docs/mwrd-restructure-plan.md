@@ -49,16 +49,16 @@ Pre-feature scale slices (SaaS-aware):
 
 - **Slice 11.5 — three Vite builds + per-portal route guards.** *Implemented.*
 - **Slice 11.6 — tenant-scoped index audit, idempotency keys, rate limits, scheduled-functions module, server-side observability.** *Implemented.*
-- Slice 11.7 — anonymity CI gate (fixture real-name leak grep).
+- **Slice 11.7 — anonymity CI gate (fixture real-name leak grep + cross-party shape tests).** *Implemented.*
 
 Feature restructure slices:
 
-- Slice 12 — doc cleanup (remove ZATCA / Tap doc references) + Moyasar payment stub interface + storage URL interface.
-- Slice 13 — public registration + callback + activation + onboarding wizard.
-- Slice 14 — leads queue + KYC queue.
-- Slice 15 — backoffice auth split: audience claims, idle timeout, cross-portal 403s.
-- Slice 16 — Approval Tree (`approvalNodes` + cycle detection + per-step `approvalTasks`).
-- Slice 17 — Dual PO (CPO + SPO + `transactionRef`).
+- **Slice 12 — doc cleanup (remove ZATCA / Tap doc references) + Moyasar payment stub interface + storage URL interface.** *Implemented.*
+- **Slice 13 — public registration + callback + activation + onboarding wizard.** *Implemented.*
+- **Slice 14 — leads queue + KYC queue.** *Implemented.*
+- **Slice 15 — backoffice auth split: idle timeout + cross-portal sign-in refusal.** *Implemented.*
+- **Slice 16 — Approval Tree (`approvalNodes` + cycle detection + per-step `approvalTasks`).** *Implemented.*
+- **Slice 17 — Dual PO (CPO + SPO + `transactionRef`).** *Implemented.*
 - Slice 18 — DN + GRN + Invoice + three-way match.
 - Slice 19 — pack-type repeater + master product code + numbering generators.
 - Slice 20 — address book.

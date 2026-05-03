@@ -28,6 +28,8 @@ type OrganizationFormValues = z.infer<typeof organizationFormSchema>;
 const statusToneMap = {
   active: "info",
   pending: "warning",
+  pendingCallback: "warning",
+  pendingKyc: "warning",
   suspended: "danger",
   closed: "neutral"
 } as const satisfies Record<OrganizationDocument["status"], "info" | "warning" | "danger" | "neutral">;
@@ -35,6 +37,8 @@ const statusToneMap = {
 const localizedStatus: Record<OrganizationDocument["status"], { en: string; ar: string }> = {
   active: { en: "Active", ar: "نشط" },
   pending: { en: "Pending", ar: "معلق" },
+  pendingCallback: { en: "Awaiting callback", ar: "بانتظار الاتصال" },
+  pendingKyc: { en: "Pending KYC", ar: "بانتظار التحقق" },
   suspended: { en: "Suspended", ar: "موقوف" },
   closed: { en: "Closed", ar: "مغلق" }
 };
