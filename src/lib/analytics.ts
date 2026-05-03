@@ -9,6 +9,7 @@ export const analyticsEvents = {
   quotesBulkApproved: "quotes_bulk_approved",
   quotesReleased: "quotes_released",
   quoteSelected: "quote_selected",
+  quoteSplitAwarded: "quote_split_awarded",
   poApproved: "po_approved",
   orderStatusUpdated: "order_status_updated",
   deliveryConfirmed: "delivery_confirmed",

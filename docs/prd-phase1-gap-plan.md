@@ -38,7 +38,7 @@ Recommendation: choose Option A unless there is a hard investor/engineering requ
 | Offer approval queue | Backoffice verifies first-time supplier offers | Foundation added: admin offer approval queue | P1 |
 | Auto-quote engine | Per-offer toggle, review window, threshold hold, server margin | Foundation added: approved supplier offers can generate admin-review quotes with server margin recommendations and threshold holds | P1 |
 | Quote manager | Margin slider, threshold-based holds, bulk send | Margin review, threshold holds, and bulk recommended approval/release added | P1 |
-| Client quote award | Line-item comparison with split awards or full basket award | Comparison exists; only whole quote selection | P1 |
+| Client quote award | Line-item comparison with split awards or full basket award | Per-line awards persisted on `rfqLineItems` and PO generation creates one PO per awarded supplier | P1 |
 | Saved carts | Multiple parked RFQ drafts with 7-day expiry | Added: tenant-scoped saved RFQ carts with 7-day expiry and client save/load/delete UI | P1 |
 | Bundles | Pre-built kits, one-click add to RFQ | Static mock bundle references only | P2 |
 | Company catalogs | Curated approved products per client company | Missing | P2 |

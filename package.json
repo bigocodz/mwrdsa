@@ -4,16 +4,24 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --config vite.config.client.ts",
+    "dev:client": "vite --config vite.config.client.ts",
+    "dev:supplier": "vite --config vite.config.supplier.ts",
+    "dev:backoffice": "vite --config vite.config.backoffice.ts",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.convex.json --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "build": "tsc -p tsconfig.app.json --noEmit && vite build",
+    "build": "pnpm build:client && pnpm build:supplier && pnpm build:backoffice",
+    "build:client": "tsc -p tsconfig.app.json --noEmit && vite build --config vite.config.client.ts",
+    "build:supplier": "tsc -p tsconfig.app.json --noEmit && vite build --config vite.config.supplier.ts",
+    "build:backoffice": "tsc -p tsconfig.app.json --noEmit && vite build --config vite.config.backoffice.ts",
     "seed": "convex run seed:seedDevelopmentData",
     "seed:load": "convex run seed:seedLoadTestData",
-    "preview": "vite preview"
+    "preview:client": "vite preview --config vite.config.client.ts",
+    "preview:supplier": "vite preview --config vite.config.supplier.ts",
+    "preview:backoffice": "vite preview --config vite.config.backoffice.ts"
   },
   "dependencies": {
     "@convex-dev/better-auth": "^0.12.0",

@@ -66,20 +66,28 @@ function parseRequiredDeliveryDeadline(requiredDeliveryDate?: string) {
   return Number.isFinite(deadline) ? deadline : null;
 }
 
-async function loadSelectedQuoteFinancials(ctx: ReadCtx, quoteId: Id<"supplierQuotes">) {
+async function loadSelectedQuoteFinancials(
+  ctx: ReadCtx,
+  quoteId: Id<"supplierQuotes">,
+  scopedRfqLineItemIds?: ReadonlyArray<Id<"rfqLineItems">>
+) {
   const lineItems = await ctx.db
     .query("supplierQuoteLineItems")
     .withIndex("by_quote", (q) => q.eq("quoteId", quoteId))
     .collect();
-  const supplierCost = lineItems.reduce((sum, item) => sum + item.supplierTotalPrice, 0);
-  const revenue = lineItems.reduce((sum, item) => sum + (item.clientFinalTotalPrice ?? item.supplierTotalPrice), 0);
+  const scope = scopedRfqLineItemIds && scopedRfqLineItemIds.length > 0
+    ? new Set<Id<"rfqLineItems">>(scopedRfqLineItemIds)
+    : null;
+  const filtered = scope ? lineItems.filter((item) => scope.has(item.rfqLineItemId)) : lineItems;
+  const supplierCost = filtered.reduce((sum, item) => sum + item.supplierTotalPrice, 0);
+  const revenue = filtered.reduce((sum, item) => sum + (item.clientFinalTotalPrice ?? item.supplierTotalPrice), 0);
   const grossMargin = revenue - supplierCost;
   return {
     supplierCost,
     revenue,
     grossMargin,
     grossMarginRate: percentage(grossMargin, revenue),
-    lineItemCount: lineItems.length
+    lineItemCount: filtered.length
   };
 }
 
@@ -108,7 +116,12 @@ async function loadOrderDeliveredAt(ctx: ReadCtx, orderId: Id<"orders">, status:
   return status === "delivered" || status === "receiptConfirmed" || status === "completed" ? updatedAt : null;
 }
 
-async function loadSelectedQuoteCoverage(ctx: ReadCtx, rfqId: Id<"rfqs">, quoteId: Id<"supplierQuotes">) {
+async function loadSelectedQuoteCoverage(
+  ctx: ReadCtx,
+  rfqId: Id<"rfqs">,
+  quoteId: Id<"supplierQuotes">,
+  scopedRfqLineItemIds?: ReadonlyArray<Id<"rfqLineItems">>
+) {
   const rfqLineItems = await ctx.db
     .query("rfqLineItems")
     .withIndex("by_rfq", (q) => q.eq("rfqId", rfqId))
@@ -117,13 +130,20 @@ async function loadSelectedQuoteCoverage(ctx: ReadCtx, rfqId: Id<"rfqs">, quoteI
     .query("supplierQuoteLineItems")
     .withIndex("by_quote", (q) => q.eq("quoteId", quoteId))
     .collect();
-  const quotedLineItemIds = new Set(quoteLineItems.map((item) => item.rfqLineItemId));
-  const requestedQuantity = rfqLineItems.reduce((sum, item) => sum + item.quantity, 0);
-  const coveredQuantity = rfqLineItems.reduce((sum, item) => sum + (quotedLineItemIds.has(item._id) ? item.quantity : 0), 0);
+  const scope = scopedRfqLineItemIds && scopedRfqLineItemIds.length > 0
+    ? new Set<Id<"rfqLineItems">>(scopedRfqLineItemIds)
+    : null;
+  const requestedSubset = scope ? rfqLineItems.filter((item) => scope.has(item._id)) : rfqLineItems;
+  const filteredQuoteLineItems = scope
+    ? quoteLineItems.filter((item) => scope.has(item.rfqLineItemId))
+    : quoteLineItems;
+  const quotedLineItemIds = new Set(filteredQuoteLineItems.map((item) => item.rfqLineItemId));
+  const requestedQuantity = requestedSubset.reduce((sum, item) => sum + item.quantity, 0);
+  const coveredQuantity = requestedSubset.reduce((sum, item) => sum + (quotedLineItemIds.has(item._id) ? item.quantity : 0), 0);
   return {
     requestedQuantity,
     coveredQuantity,
-    requestedLineItemCount: rfqLineItems.length,
+    requestedLineItemCount: requestedSubset.length,
     coveredLineItemCount: quotedLineItemIds.size,
     fillRate: percentage(coveredQuantity, requestedQuantity)
   };
@@ -225,7 +245,7 @@ async function refreshAdminRevenueDailySummaryForClientDay(ctx: MutationCtx, cli
   for (const purchaseOrder of purchaseOrders) {
     const quote = await ctx.db.get(purchaseOrder.selectedQuoteId);
     if (!quote) continue;
-    const financials = await loadSelectedQuoteFinancials(ctx, purchaseOrder.selectedQuoteId);
+    const financials = await loadSelectedQuoteFinancials(ctx, purchaseOrder.selectedQuoteId, purchaseOrder.awardedRfqLineItemIds);
     const margin = await loadLatestMarginPercent(ctx, purchaseOrder.selectedQuoteId);
     const existing = groups.get(quote.supplierOrganizationId) ?? {
       supplierOrganizationId: quote.supplierOrganizationId,
@@ -285,10 +305,16 @@ async function refreshClientSpendDailySummaryForClientDay(ctx: MutationCtx, clie
     const department = dimensionName(rfq?.department);
     const branch = dimensionName(rfq?.branch);
     const costCenter = dimensionName(rfq?.costCenter);
-    const quoteLineItems = await ctx.db
+    const allQuoteLineItems = await ctx.db
       .query("supplierQuoteLineItems")
       .withIndex("by_quote", (q) => q.eq("quoteId", purchaseOrder.selectedQuoteId))
       .collect();
+    const awardedScope = purchaseOrder.awardedRfqLineItemIds && purchaseOrder.awardedRfqLineItemIds.length > 0
+      ? new Set<Id<"rfqLineItems">>(purchaseOrder.awardedRfqLineItemIds)
+      : null;
+    const quoteLineItems = awardedScope
+      ? allQuoteLineItems.filter((item) => awardedScope.has(item.rfqLineItemId))
+      : allQuoteLineItems;
     let poTotal = 0;
 
     for (const item of quoteLineItems) {
@@ -388,9 +414,16 @@ async function refreshSupplierPerformanceDailySummary(ctx: MutationCtx, supplier
     const deadline = parseRequiredDeliveryDeadline(rfq?.requiredDeliveryDate);
     const isOnTime = deliveredAt !== null && deadline !== null ? deliveredAt <= deadline : null;
     const coverage = purchaseOrder
-      ? await loadSelectedQuoteCoverage(ctx, purchaseOrder.rfqId, purchaseOrder.selectedQuoteId)
+      ? await loadSelectedQuoteCoverage(
+          ctx,
+          purchaseOrder.rfqId,
+          purchaseOrder.selectedQuoteId,
+          purchaseOrder.awardedRfqLineItemIds
+        )
       : { requestedQuantity: 0, coveredQuantity: 0 };
-    const financials = purchaseOrder ? await loadSelectedQuoteFinancials(ctx, purchaseOrder.selectedQuoteId) : { revenue: 0 };
+    const financials = purchaseOrder
+      ? await loadSelectedQuoteFinancials(ctx, purchaseOrder.selectedQuoteId, purchaseOrder.awardedRfqLineItemIds)
+      : { revenue: 0 };
 
     if (order.status === "delivered" || order.status === "receiptConfirmed" || order.status === "completed") completedOrders++;
     if (order.status === "delayed" || order.status === "disputed") delayedOrders++;
@@ -481,7 +514,7 @@ async function loadRecentAdminQuoteRows(ctx: ReadCtx) {
     const rfq = await ctx.db.get(purchaseOrder.rfqId);
     const client = await ctx.db.get(purchaseOrder.clientOrganizationId);
     const supplier = await ctx.db.get(quote.supplierOrganizationId);
-    const financials = await loadSelectedQuoteFinancials(ctx, purchaseOrder.selectedQuoteId);
+    const financials = await loadSelectedQuoteFinancials(ctx, purchaseOrder.selectedQuoteId, purchaseOrder.awardedRfqLineItemIds);
     const margin = await loadLatestMarginPercent(ctx, purchaseOrder.selectedQuoteId);
 
     quoteRows.push({
@@ -742,9 +775,16 @@ async function loadRecentSupplierFulfillmentRows(ctx: QueryCtx, supplierOrganiza
     const isDeliverySample = deliveredAt !== null && deadline !== null;
     const isOnTime = isDeliverySample ? deliveredAt <= deadline : null;
     const coverage = purchaseOrder
-      ? await loadSelectedQuoteCoverage(ctx, purchaseOrder.rfqId, purchaseOrder.selectedQuoteId)
+      ? await loadSelectedQuoteCoverage(
+          ctx,
+          purchaseOrder.rfqId,
+          purchaseOrder.selectedQuoteId,
+          purchaseOrder.awardedRfqLineItemIds
+        )
       : { requestedQuantity: 0, coveredQuantity: 0, requestedLineItemCount: 0, coveredLineItemCount: 0, fillRate: 0 };
-    const financials = purchaseOrder ? await loadSelectedQuoteFinancials(ctx, purchaseOrder.selectedQuoteId) : { revenue: 0 };
+    const financials = purchaseOrder
+      ? await loadSelectedQuoteFinancials(ctx, purchaseOrder.selectedQuoteId, purchaseOrder.awardedRfqLineItemIds)
+      : { revenue: 0 };
 
     fulfillmentRows.push({
       orderId: order._id,
@@ -952,10 +992,16 @@ export const getClientReportSummary = query({
 
     for (const purchaseOrder of approvedPurchaseOrders) {
       const rfq = await ctx.db.get(purchaseOrder.rfqId);
-      const quoteLineItems = await ctx.db
+      const allQuoteLineItems = await ctx.db
         .query("supplierQuoteLineItems")
         .withIndex("by_quote", (q) => q.eq("quoteId", purchaseOrder.selectedQuoteId))
         .collect();
+      const awardedScope = purchaseOrder.awardedRfqLineItemIds && purchaseOrder.awardedRfqLineItemIds.length > 0
+        ? new Set<Id<"rfqLineItems">>(purchaseOrder.awardedRfqLineItemIds)
+        : null;
+      const quoteLineItems = awardedScope
+        ? allQuoteLineItems.filter((item) => awardedScope.has(item.rfqLineItemId))
+        : allQuoteLineItems;
       let poTotal = 0;
       for (const item of quoteLineItems) {
         poTotal += item.clientFinalTotalPrice ?? 0;
@@ -1106,7 +1152,7 @@ export const getAdminRevenueMarginSummary = query({
       const rfq = await ctx.db.get(purchaseOrder.rfqId);
       const client = await ctx.db.get(purchaseOrder.clientOrganizationId);
       const supplier = await ctx.db.get(quote.supplierOrganizationId);
-      const financials = await loadSelectedQuoteFinancials(ctx, purchaseOrder.selectedQuoteId);
+      const financials = await loadSelectedQuoteFinancials(ctx, purchaseOrder.selectedQuoteId, purchaseOrder.awardedRfqLineItemIds);
       const margin = await loadLatestMarginPercent(ctx, purchaseOrder.selectedQuoteId);
 
       totalRevenue += financials.revenue;
@@ -1279,9 +1325,16 @@ export const getSupplierPerformanceSummary = query({
       const isDeliverySample = deliveredAt !== null && deadline !== null;
       const isOnTime = isDeliverySample ? deliveredAt <= deadline : null;
       const coverage = purchaseOrder
-        ? await loadSelectedQuoteCoverage(ctx, purchaseOrder.rfqId, purchaseOrder.selectedQuoteId)
+        ? await loadSelectedQuoteCoverage(
+            ctx,
+            purchaseOrder.rfqId,
+            purchaseOrder.selectedQuoteId,
+            purchaseOrder.awardedRfqLineItemIds
+          )
         : { requestedQuantity: 0, coveredQuantity: 0, requestedLineItemCount: 0, coveredLineItemCount: 0, fillRate: 0 };
-      const financials = purchaseOrder ? await loadSelectedQuoteFinancials(ctx, purchaseOrder.selectedQuoteId) : { revenue: 0 };
+      const financials = purchaseOrder
+        ? await loadSelectedQuoteFinancials(ctx, purchaseOrder.selectedQuoteId, purchaseOrder.awardedRfqLineItemIds)
+        : { revenue: 0 };
 
       if (isOnTime === true) {
         onTimeDeliveries++;

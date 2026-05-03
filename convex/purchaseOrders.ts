@@ -3,12 +3,17 @@ import { paginationOptsValidator } from "convex/server";
 import { mutation, query, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { refreshPurchaseOrderAnalytics, refreshSupplierAnalyticsForOrder } from "./analytics";
+import { lookupIdempotentResult, recordIdempotentResult } from "./idempotency";
 import { notifyOrganization } from "./notifications";
 import { assertActiveUser, assertHasPermission, assertSameOrganization } from "./rbac";
 
 const CLIENT_PURCHASE_ORDER_LIST_LIMIT = 100;
 
-async function loadQuoteSnapshot(ctx: QueryCtx, quoteId: Id<"supplierQuotes">) {
+async function loadQuoteSnapshot(
+  ctx: QueryCtx,
+  quoteId: Id<"supplierQuotes">,
+  scopedRfqLineItemIds?: ReadonlyArray<Id<"rfqLineItems">>
+) {
   const quote = await ctx.db.get(quoteId);
   if (!quote) {
     return null;
@@ -17,8 +22,12 @@ async function loadQuoteSnapshot(ctx: QueryCtx, quoteId: Id<"supplierQuotes">) {
     .query("supplierQuoteLineItems")
     .withIndex("by_quote", (q) => q.eq("quoteId", quoteId))
     .collect();
+  const scopeSet = scopedRfqLineItemIds && scopedRfqLineItemIds.length > 0
+    ? new Set<Id<"rfqLineItems">>(scopedRfqLineItemIds)
+    : null;
+  const filtered = scopeSet ? lineItems.filter((item) => scopeSet.has(item.rfqLineItemId)) : lineItems;
   const enriched = await Promise.all(
-    lineItems.map(async (item) => {
+    filtered.map(async (item) => {
       const rfqLine = await ctx.db.get(item.rfqLineItemId);
       const product = rfqLine?.productId ? await ctx.db.get(rfqLine.productId) : null;
       return {
@@ -53,7 +62,7 @@ async function loadQuoteSnapshot(ctx: QueryCtx, quoteId: Id<"supplierQuotes">) {
 }
 
 async function buildPurchaseOrderRow(ctx: QueryCtx, purchaseOrder: Doc<"purchaseOrders">) {
-  const snapshot = await loadQuoteSnapshot(ctx, purchaseOrder.selectedQuoteId);
+  const snapshot = await loadQuoteSnapshot(ctx, purchaseOrder.selectedQuoteId, purchaseOrder.awardedRfqLineItemIds);
   const supplier = snapshot ? await ctx.db.get(snapshot.supplierOrganizationId) : null;
   const approvals = await ctx.db
     .query("approvalInstances")
@@ -68,6 +77,7 @@ async function buildPurchaseOrderRow(ctx: QueryCtx, purchaseOrder: Doc<"purchase
     createdAt: purchaseOrder.createdAt,
     updatedAt: purchaseOrder.updatedAt,
     approvedAt: purchaseOrder.approvedAt,
+    awardKind: purchaseOrder.awardKind ?? "full",
     clientTotal: snapshot?.clientTotal ?? 0,
     supplierAnonymousId: supplier?.supplierAnonymousId ?? "—",
     approvalStatus: latest?.status ?? "pending"
@@ -78,11 +88,26 @@ export const generatePoFromSelectedQuote = mutation({
   args: {
     actorUserId: v.id("users"),
     rfqId: v.id("rfqs"),
-    termsTemplateId: v.optional(v.string())
+    termsTemplateId: v.optional(v.string()),
+    idempotencyKey: v.optional(v.string())
   },
   handler: async (ctx, args) => {
     const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
     assertHasPermission(actor, "rfq:create");
+
+    if (args.idempotencyKey) {
+      const cached = await lookupIdempotentResult(ctx, args.actorUserId, "po.generate", args.idempotencyKey);
+      if (cached !== undefined) {
+        const existing = await ctx.db
+          .query("purchaseOrders")
+          .withIndex("by_rfq", (q) => q.eq("rfqId", args.rfqId))
+          .collect();
+        return {
+          purchaseOrderIds: existing.map((row) => row._id),
+          isSplit: existing.length > 1
+        };
+      }
+    }
 
     const rfq = await ctx.db.get(args.rfqId);
     if (!rfq) {
@@ -101,57 +126,92 @@ export const generatePoFromSelectedQuote = mutation({
       throw new Error("A purchase order already exists for this RFQ.");
     }
 
-    const quotes = await ctx.db
-      .query("supplierQuotes")
+    const rfqLineItems = await ctx.db
+      .query("rfqLineItems")
       .withIndex("by_rfq", (q) => q.eq("rfqId", args.rfqId))
       .collect();
-    const selectedQuote = quotes.find((quote) => quote.status === "selected");
-    if (!selectedQuote) {
-      throw new Error("No selected quote found for this RFQ.");
+    if (rfqLineItems.length === 0) {
+      throw new Error("RFQ has no line items.");
     }
 
-    const now = Date.now();
-    const purchaseOrderId = await ctx.db.insert("purchaseOrders", {
-      rfqId: args.rfqId,
-      selectedQuoteId: selectedQuote._id,
-      clientOrganizationId: rfq.clientOrganizationId,
-      status: "pendingApproval",
-      termsTemplateId: args.termsTemplateId,
-      createdAt: now,
-      updatedAt: now
-    });
+    const awardGroups = new Map<Id<"supplierQuotes">, Id<"rfqLineItems">[]>();
+    for (const item of rfqLineItems) {
+      const awardedQuoteId = item.awardedQuoteId;
+      if (!awardedQuoteId) {
+        throw new Error("Every line item must be awarded before generating purchase orders.");
+      }
+      const list = awardGroups.get(awardedQuoteId) ?? [];
+      list.push(item._id);
+      awardGroups.set(awardedQuoteId, list);
+    }
 
-    await ctx.db.insert("approvalInstances", {
-      purchaseOrderId,
-      status: "pending",
-      createdAt: now,
-      updatedAt: now
-    });
+    const isSplit = awardGroups.size > 1;
+    const now = Date.now();
+    const purchaseOrderIds: Id<"purchaseOrders">[] = [];
+
+    for (const [quoteId, lineItemIds] of awardGroups) {
+      const quote = await ctx.db.get(quoteId);
+      if (!quote || quote.status !== "selected") {
+        throw new Error("Awarded quote is no longer in a selected state.");
+      }
+
+      const purchaseOrderId = await ctx.db.insert("purchaseOrders", {
+        rfqId: args.rfqId,
+        selectedQuoteId: quoteId,
+        clientOrganizationId: rfq.clientOrganizationId,
+        status: "pendingApproval",
+        termsTemplateId: args.termsTemplateId,
+        awardedRfqLineItemIds: isSplit ? lineItemIds : undefined,
+        awardKind: isSplit ? "split" : "full",
+        createdAt: now,
+        updatedAt: now
+      });
+      purchaseOrderIds.push(purchaseOrderId);
+
+      await ctx.db.insert("approvalInstances", {
+        purchaseOrderId,
+        status: "pending",
+        createdAt: now,
+        updatedAt: now
+      });
+
+      await ctx.db.insert("auditLogs", {
+        actorUserId: args.actorUserId,
+        organizationId: rfq.clientOrganizationId,
+        action: "po.generated",
+        entityType: "purchaseOrder",
+        entityId: purchaseOrderId,
+        summary: isSplit
+          ? `Purchase order generated for split award (${lineItemIds.length} of ${rfqLineItems.length} line items)`
+          : "Purchase order generated from selected quote",
+        createdAt: now
+      });
+
+      await notifyOrganization(ctx, rfq.clientOrganizationId, {
+        type: "po.pending_approval",
+        titleAr: "أمر شراء بانتظار الموافقة",
+        titleEn: "Purchase order pending approval",
+        bodyAr: `أمر الشراء ${purchaseOrderId.slice(-6).toUpperCase()} بانتظار الموافقة.`,
+        bodyEn: `Purchase order ${purchaseOrderId.slice(-6).toUpperCase()} is awaiting approval.`
+      });
+    }
 
     await ctx.db.patch(args.rfqId, {
       status: "poGenerated",
       updatedAt: now
     });
 
-    await ctx.db.insert("auditLogs", {
-      actorUserId: args.actorUserId,
-      organizationId: rfq.clientOrganizationId,
-      action: "po.generated",
-      entityType: "purchaseOrder",
-      entityId: purchaseOrderId,
-      summary: "Purchase order generated from selected quote",
-      createdAt: now
-    });
+    if (args.idempotencyKey) {
+      await recordIdempotentResult(ctx, {
+        actorUserId: args.actorUserId,
+        action: "po.generate",
+        key: args.idempotencyKey,
+        resultEntityType: "rfq",
+        resultEntityId: args.rfqId
+      });
+    }
 
-    await notifyOrganization(ctx, rfq.clientOrganizationId, {
-      type: "po.pending_approval",
-      titleAr: "أمر شراء بانتظار الموافقة",
-      titleEn: "Purchase order pending approval",
-      bodyAr: `أمر الشراء ${purchaseOrderId.slice(-6).toUpperCase()} بانتظار الموافقة.`,
-      bodyEn: `Purchase order ${purchaseOrderId.slice(-6).toUpperCase()} is awaiting approval.`
-    });
-
-    return purchaseOrderId;
+    return { purchaseOrderIds, isSplit };
   }
 });
 
@@ -212,7 +272,7 @@ export const getPurchaseOrderDetail = query({
     }
     assertSameOrganization(actor, purchaseOrder.clientOrganizationId);
 
-    const snapshot = await loadQuoteSnapshot(ctx, purchaseOrder.selectedQuoteId);
+    const snapshot = await loadQuoteSnapshot(ctx, purchaseOrder.selectedQuoteId, purchaseOrder.awardedRfqLineItemIds);
     const supplier = snapshot ? await ctx.db.get(snapshot.supplierOrganizationId) : null;
     const rfq = await ctx.db.get(purchaseOrder.rfqId);
     const approvals = await ctx.db
@@ -228,6 +288,7 @@ export const getPurchaseOrderDetail = query({
       approvedAt: purchaseOrder.approvedAt,
       createdAt: purchaseOrder.createdAt,
       updatedAt: purchaseOrder.updatedAt,
+      awardKind: purchaseOrder.awardKind ?? "full",
       rfq: rfq
         ? {
             _id: rfq._id,

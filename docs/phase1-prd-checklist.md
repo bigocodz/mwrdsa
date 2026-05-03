@@ -39,7 +39,7 @@ This checklist tracks product/workflow compliance inside the current Convex/Vite
 - [x] Auto-draft quotes from approved offers into admin review.
 - [x] Threshold hold queue for quote manager.
 - [x] Bulk quote release.
-- [ ] Split award by line item.
+- [x] Split award by line item.
 
 ## Client Procurement Depth
 

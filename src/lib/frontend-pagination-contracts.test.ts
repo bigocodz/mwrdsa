@@ -59,14 +59,16 @@ describe("frontend pagination contracts", () => {
   });
 
   it("routes the PRD supplier-offer workspaces into admin and supplier portals", () => {
-    const router = readSource("src/routes/router.tsx");
+    const supplierRouter = readSource("src/routes/supplier-router.tsx");
+    const backofficeRouter = readSource("src/routes/backoffice-router.tsx");
     const supplierNav = readSource("src/features/supplier/hooks/use-supplier-nav.tsx");
     const adminNav = readSource("src/features/admin/hooks/use-admin-nav.tsx");
     const adminPricing = readSource("src/features/admin/pages/admin-rfq-pricing-page.tsx");
 
-    expect(router).toContain("SupplierOffersPage");
-    expect(router).toContain("AdminOfferApprovalsPage");
-    expect(router).toContain('path: "offers"');
+    expect(supplierRouter).toContain("SupplierOffersPage");
+    expect(backofficeRouter).toContain("AdminOfferApprovalsPage");
+    expect(supplierRouter).toContain('path: "offers"');
+    expect(backofficeRouter).toContain('path: "offers"');
     expect(supplierNav).toContain("/supplier/offers");
     expect(adminNav).toContain("/admin/offers");
     expect(adminPricing).toContain("generateAutoQuotesForRfq");
@@ -75,5 +77,22 @@ describe("frontend pagination contracts", () => {
     expect(adminPricing).toContain("Approve recommended");
     expect(adminPricing).toContain("Recommended margin");
     expect(adminPricing).toContain("Threshold hold");
+  });
+
+  it("isolates per-portal builds with their own router and entry point", () => {
+    const clientRouter = readSource("src/routes/client-router.tsx");
+    const supplierRouter = readSource("src/routes/supplier-router.tsx");
+    const backofficeRouter = readSource("src/routes/backoffice-router.tsx");
+    const protectedRoute = readSource("src/routes/protected-route.tsx");
+
+    expect(clientRouter).not.toContain("SupplierOffersPage");
+    expect(clientRouter).not.toContain("AdminDashboardPage");
+    expect(supplierRouter).not.toContain("ClientDashboardPage");
+    expect(supplierRouter).not.toContain("AdminDashboardPage");
+    expect(backofficeRouter).not.toContain("ClientDashboardPage");
+    expect(backofficeRouter).not.toContain("SupplierDashboardPage");
+
+    expect(protectedRoute).toContain("getBuildPortalType");
+    expect(protectedRoute).toContain("buildPortal !== portal");
   });
 });

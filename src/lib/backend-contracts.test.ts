@@ -159,4 +159,88 @@ describe("backend scale contracts", () => {
     expect(exportedBlock(rfqs, "deleteSavedRfqCartForActor")).toContain("assertSameOrganization");
     expect(exportedBlock(rfqs, "deleteSavedRfqCartForActor")).toContain("rfq_cart.deleted");
   });
+
+  it("keeps SaaS guarantees: idempotency, rate limits, scheduler, observability", () => {
+    const schema = readSource("convex/schema.ts");
+    const idempotency = readSource("convex/idempotency.ts");
+    const rateLimits = readSource("convex/rateLimits.ts");
+    const observability = readSource("convex/observability.ts");
+    const scheduled = readSource("convex/scheduled.ts");
+    const crons = readSource("convex/crons.ts");
+    const rfqs = readSource("convex/rfqs.ts");
+    const offers = readSource("convex/offers.ts");
+    const purchaseOrders = readSource("convex/purchaseOrders.ts");
+
+    expect(schema).toContain("idempotencyKeys: defineTable");
+    expect(schema).toContain('index("by_actor_action_key"');
+    expect(schema).toContain("rateLimits: defineTable");
+    expect(schema).toContain('index("by_actor_action_window"');
+    expect(schema).toContain("mutationMetrics: defineTable");
+    expect(schema).toContain('index("by_outcome_created_at"');
+
+    expect(idempotency).toContain("lookupIdempotentResult");
+    expect(idempotency).toContain("recordIdempotentResult");
+    expect(rateLimits).toContain("assertWithinRateLimit");
+    expect(rateLimits).toContain("RATE_LIMIT_POLICIES");
+    expect(rateLimits).toContain("Rate limit exceeded");
+    expect(observability).toContain("withMetrics");
+    expect(observability).toContain('outcome: "success"');
+    expect(observability).toContain('outcome: "error"');
+
+    expect(scheduled).toContain("sweepExpiredSavedRfqCarts");
+    expect(scheduled).toContain("sweepExpiredIdempotencyKeys");
+    expect(scheduled).toContain("sweepStaleRateLimits");
+    expect(scheduled).toContain("sweepOldMutationMetrics");
+    expect(crons).toContain("sweep-saved-rfq-carts");
+    expect(crons).toContain("sweep-idempotency-keys");
+    expect(crons).toContain("sweep-rate-limits");
+    expect(crons).toContain("sweep-mutation-metrics");
+
+    const submitRfq = exportedBlock(rfqs, "submitRfq");
+    expect(submitRfq).toContain("idempotencyKey");
+    expect(submitRfq).toContain("lookupIdempotentResult");
+    expect(submitRfq).toContain("recordIdempotentResult");
+    expect(submitRfq).toContain("RATE_LIMIT_POLICIES.rfqSubmit");
+    expect(submitRfq).toContain("withMetrics");
+
+    const upsertOffer = exportedBlock(offers, "upsertSupplierOffer");
+    expect(upsertOffer).toContain("RATE_LIMIT_POLICIES.supplierOfferUpsert");
+
+    const submitProductRequest = exportedBlock(offers, "submitProductAdditionRequest");
+    expect(submitProductRequest).toContain("RATE_LIMIT_POLICIES.productAdditionRequest");
+
+    const generatePo = exportedBlock(purchaseOrders, "generatePoFromSelectedQuote");
+    expect(generatePo).toContain("idempotencyKey");
+    expect(generatePo).toContain("lookupIdempotentResult");
+    expect(generatePo).toContain("recordIdempotentResult");
+  });
+
+  it("keeps PRD split award and per-line PO generation wired", () => {
+    const schema = readSource("convex/schema.ts");
+    const quotes = readSource("convex/quotes.ts");
+    const purchaseOrders = readSource("convex/purchaseOrders.ts");
+
+    expect(schema).toContain("awardedQuoteId");
+    expect(schema).toContain("awardedRfqLineItemIds");
+    expect(schema).toContain("awardKind");
+    expect(schema).toContain('index("by_awarded_quote", ["awardedQuoteId"])');
+
+    const splitMutation = exportedBlock(quotes, "selectAwardsByLineItem");
+    expect(splitMutation).toContain("Every RFQ line item must be awarded.");
+    expect(splitMutation).toContain("Selected quote does not price this line item.");
+    expect(splitMutation).toContain("ensureQuoteSelectable");
+    expect(splitMutation).toContain("quote.split_awarded");
+    expect(splitMutation).toContain('status: "selected"');
+    expect(splitMutation).toContain('status: "lost"');
+    expect(splitMutation).toContain("awardedQuoteId");
+
+    const generate = exportedBlock(purchaseOrders, "generatePoFromSelectedQuote");
+    expect(generate).toContain("awardGroups");
+    expect(generate).toContain("awardedRfqLineItemIds");
+    expect(generate).toContain('awardKind: isSplit ? "split" : "full"');
+    expect(generate).toContain("Every line item must be awarded before generating purchase orders.");
+    expect(generate).toContain("purchaseOrderIds.push(purchaseOrderId)");
+
+    expect(purchaseOrders).toContain("scopedRfqLineItemIds");
+  });
 });

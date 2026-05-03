@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "convex/react";
-import { ArrowLeft, ArrowUpDown, CheckCircle2, FileText, Loader2, Star } from "lucide-react";
+import { ArrowLeft, ArrowUpDown, CheckCircle2, FileText, Loader2, Lock, Star } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
@@ -39,30 +39,13 @@ export function ClientQuoteComparisonPage() {
   const language = i18n.language;
   const queryArgs = isBetterAuthConfigured && user && rfqId ? { actorUserId: user.id as Id<"users">, rfqId: rfqId as Id<"rfqs"> } : "skip";
   const data = useQuery(api.quotes.getRfqQuoteComparison, queryArgs);
-  const selectQuote = useMutation(api.quotes.selectQuote);
+  const selectAwardsByLineItem = useMutation(api.quotes.selectAwardsByLineItem);
   const generatePo = useMutation(api.purchaseOrders.generatePoFromSelectedQuote);
   const [sortKey, setSortKey] = useState<SortKey>("price");
-  const [pendingId, setPendingId] = useState<Id<"supplierQuotes"> | null>(null);
+  const [overrides, setOverrides] = useState<Record<string, Id<"supplierQuotes">>>({});
+  const [isLocking, setIsLocking] = useState(false);
   const [isGeneratingPo, setIsGeneratingPo] = useState(false);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
-
-  async function handleGeneratePo() {
-    if (!isBetterAuthConfigured || !user || !rfqId) return;
-    setMessage(null);
-    setIsGeneratingPo(true);
-    try {
-      const purchaseOrderId = await generatePo({
-        actorUserId: user.id as Id<"users">,
-        rfqId: rfqId as Id<"rfqs">
-      });
-      navigate(`/client/orders/po/${purchaseOrderId}`);
-    } catch (error) {
-      const text = error instanceof Error ? error.message : "";
-      setMessage({ tone: "error", text: text || localize({ en: "Could not generate PO.", ar: "تعذر إنشاء أمر الشراء." }, language) });
-    } finally {
-      setIsGeneratingPo(false);
-    }
-  }
 
   const sortedQuotes = useMemo(() => {
     const source = data?.quotes ?? [];
@@ -77,32 +60,153 @@ export function ClientQuoteComparisonPage() {
     return copy;
   }, [data, sortKey]);
 
-  const lowestPrice = useMemo(() => sortedQuotes.length > 0 ? Math.min(...sortedQuotes.map((quote) => quote.clientTotal)) : 0, [sortedQuotes]);
+  const awards = useMemo<Record<string, Id<"supplierQuotes">>>(() => {
+    if (!data?.lineItems) return {};
+    const next: Record<string, Id<"supplierQuotes">> = {};
+    for (const item of data.lineItems) {
+      const override = overrides[item._id];
+      if (override) {
+        next[item._id] = override;
+        continue;
+      }
+      const eligible = (data.quotes ?? [])
+        .map((quote) => {
+          const line = quote.lineItems.find((entry) => entry.rfqLineItemId === item._id);
+          return line ? { quoteId: quote._id, total: line.clientFinalTotalPrice ?? Number.POSITIVE_INFINITY } : null;
+        })
+        .filter((entry): entry is { quoteId: Id<"supplierQuotes">; total: number } => entry !== null)
+        .sort((a, b) => a.total - b.total);
+      if (eligible.length > 0) {
+        next[item._id] = eligible[0].quoteId;
+      }
+    }
+    return next;
+  }, [data, overrides]);
 
-  async function handleSelect(quoteId: Id<"supplierQuotes">) {
-    if (!isBetterAuthConfigured || !user || !rfqId) return;
+  const lowestPrice = useMemo(
+    () => (sortedQuotes.length > 0 ? Math.min(...sortedQuotes.map((quote) => quote.clientTotal)) : 0),
+    [sortedQuotes]
+  );
+
+  const awardSummary = useMemo(() => {
+    if (!data) {
+      return { uniqueQuoteCount: 0, lineItemCount: 0, total: 0, isFullyAssigned: false, isSplit: false };
+    }
+    const lineItemCount = data.lineItems.length;
+    const assignedIds = data.lineItems
+      .map((item) => awards[item._id])
+      .filter((value): value is Id<"supplierQuotes"> => Boolean(value));
+    const uniqueQuoteCount = new Set(assignedIds).size;
+    let total = 0;
+    for (const item of data.lineItems) {
+      const quoteId = awards[item._id];
+      if (!quoteId) continue;
+      const quote = data.quotes.find((entry) => entry._id === quoteId);
+      const line = quote?.lineItems.find((entry) => entry.rfqLineItemId === item._id);
+      total += line?.clientFinalTotalPrice ?? 0;
+    }
+    return {
+      uniqueQuoteCount,
+      lineItemCount,
+      total,
+      isFullyAssigned: lineItemCount > 0 && assignedIds.length === lineItemCount,
+      isSplit: uniqueQuoteCount > 1
+    };
+  }, [data, awards]);
+
+  function handleAwardLineItem(lineItemId: Id<"rfqLineItems">, quoteId: Id<"supplierQuotes">) {
+    setOverrides((prev) => ({ ...prev, [lineItemId]: quoteId }));
+  }
+
+  function handleAwardAllToQuote(quoteId: Id<"supplierQuotes">) {
+    if (!data) return;
+    const quote = data.quotes.find((entry) => entry._id === quoteId);
+    if (!quote) return;
+    const next: Record<string, Id<"supplierQuotes">> = {};
+    for (const item of data.lineItems) {
+      if (quote.lineItems.some((line) => line.rfqLineItemId === item._id)) {
+        next[item._id] = quoteId;
+      }
+    }
+    setOverrides(next);
+  }
+
+  async function handleLockAwards() {
+    if (!isBetterAuthConfigured || !user || !rfqId || !data) return;
+    if (!awardSummary.isFullyAssigned) return;
     setMessage(null);
-    setPendingId(quoteId);
+    setIsLocking(true);
     try {
-      await selectQuote({
+      const payload = data.lineItems.map((item) => ({
+        rfqLineItemId: item._id,
+        quoteId: awards[item._id]
+      }));
+      const result = await selectAwardsByLineItem({
         actorUserId: user.id as Id<"users">,
         rfqId: rfqId as Id<"rfqs">,
-        quoteId
+        awards: payload
       });
-      trackEvent("quote_selected", { rfq_id: rfqId, quote_id: quoteId });
-      setMessage({ tone: "success", text: localize({ en: "Quote selected. RFQ is now locked.", ar: "تم اختيار العرض. تم قفل الطلب." }, language) });
+      trackEvent(result.isSplit ? "quote_split_awarded" : "quote_selected", {
+        rfq_id: rfqId,
+        unique_supplier_count: result.awardedQuoteIds.length
+      });
+      setMessage({
+        tone: "success",
+        text: result.isSplit
+          ? localize(
+              {
+                en: `Award split across ${result.awardedQuoteIds.length} suppliers — RFQ locked.`,
+                ar: `تم توزيع الجائزة على ${result.awardedQuoteIds.length} موردين — تم قفل الطلب.`
+              },
+              language
+            )
+          : localize({ en: "Quote selected. RFQ is now locked.", ar: "تم اختيار العرض. تم قفل الطلب." }, language)
+      });
     } catch (error) {
       const text = error instanceof Error ? error.message : "";
-      setMessage({ tone: "error", text: text || localize({ en: "Could not select the quote.", ar: "تعذر اختيار العرض." }, language) });
+      setMessage({
+        tone: "error",
+        text: text || localize({ en: "Could not lock awards.", ar: "تعذر تأكيد التوزيع." }, language)
+      });
     } finally {
-      setPendingId(null);
+      setIsLocking(false);
+    }
+  }
+
+  async function handleGeneratePo() {
+    if (!isBetterAuthConfigured || !user || !rfqId) return;
+    setMessage(null);
+    setIsGeneratingPo(true);
+    try {
+      const result = await generatePo({
+        actorUserId: user.id as Id<"users">,
+        rfqId: rfqId as Id<"rfqs">,
+        idempotencyKey: crypto.randomUUID()
+      });
+      const firstId = result.purchaseOrderIds[0];
+      if (firstId) {
+        navigate(`/client/orders/po/${firstId}`);
+      } else {
+        navigate("/client/orders");
+      }
+    } catch (error) {
+      const text = error instanceof Error ? error.message : "";
+      setMessage({
+        tone: "error",
+        text: text || localize({ en: "Could not generate PO.", ar: "تعذر إنشاء أمر الشراء." }, language)
+      });
+    } finally {
+      setIsGeneratingPo(false);
     }
   }
 
   return (
     <PortalShell
       title={localize({ en: "Quote comparison", ar: "مقارنة العروض" }, language)}
-      description={localize({ en: "Compare anonymous released quotes and lock your selection.", ar: "قارن العروض المجهولة المصدرة وقفل اختيارك." }, language)}
+      description={localize(
+        { en: "Compare anonymous released quotes and award per line item.", ar: "قارن العروض المجهولة المصدرة ووزّع لكل بند." },
+        language
+      )}
       navItems={navItems}
       primaryActionLabel={localize({ en: "Back to quotes", ar: "العودة إلى العروض" }, language)}
       primaryActionIcon={<ArrowLeft className="size-4" aria-hidden="true" />}
@@ -166,13 +270,11 @@ export function ClientQuoteComparisonPage() {
                 <ArrowUpDown className="size-4" aria-hidden="true" />
                 {localize({ en: "Sort by", ar: "ترتيب حسب" }, language)}
               </span>
-              {(
-                [
-                  { key: "price" as const, en: "Lowest price", ar: "أقل سعر" },
-                  { key: "lead" as const, en: "Fastest delivery", ar: "أسرع تسليم" },
-                  { key: "validity" as const, en: "Earliest expiry", ar: "أقرب انتهاء" }
-                ]
-              ).map((option) => (
+              {([
+                { key: "price" as const, en: "Lowest price", ar: "أقل سعر" },
+                { key: "lead" as const, en: "Fastest delivery", ar: "أسرع تسليم" },
+                { key: "validity" as const, en: "Earliest expiry", ar: "أقرب انتهاء" }
+              ]).map((option) => (
                 <Button
                   key={option.key}
                   type="button"
@@ -188,14 +290,15 @@ export function ClientQuoteComparisonPage() {
 
           <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
             {sortedQuotes.map((quote) => {
-              const isSelected = quote.status === "selected";
               const isLowest = quote.clientTotal === lowestPrice;
+              const linesAwardedToQuote = data.lineItems.filter((item) => awards[item._id] === quote._id).length;
+              const isFullBasketSelected = !data.locked && linesAwardedToQuote === data.lineItems.length && data.lineItems.length > 0;
               return (
                 <article
                   key={quote._id}
                   className={cn(
                     "flex flex-col gap-4 rounded-lg border bg-card p-5 shadow-card",
-                    isSelected ? "border-primary/60" : "border-border/70"
+                    linesAwardedToQuote > 0 ? "border-primary/60" : "border-border/70"
                   )}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -220,15 +323,13 @@ export function ClientQuoteComparisonPage() {
                       <p className="mt-1 font-semibold">{quote.leadTimeDays} {localize({ en: "days", ar: "يوم" }, language)}</p>
                     </div>
                     <div className="rounded-lg bg-muted/40 p-3">
-                      <span className="text-muted-foreground">{localize({ en: "Partial fulfillment", ar: "التنفيذ الجزئي" }, language)}</span>
+                      <span className="text-muted-foreground">{localize({ en: "Lines awarded", ar: "البنود الموزّعة" }, language)}</span>
                       <p className="mt-1 font-semibold">
-                        {quote.supportsPartialFulfillment
-                          ? localize({ en: "Allowed", ar: "مسموح" }, language)
-                          : localize({ en: "Not allowed", ar: "غير مسموح" }, language)}
+                        {linesAwardedToQuote} / {data.lineItems.length}
                       </p>
                     </div>
                   </div>
-                  {isSelected ? (
+                  {quote.status === "selected" ? (
                     <StatusBadge tone="info">
                       <CheckCircle2 className="size-4" aria-hidden="true" />
                       {localize({ en: "Selected", ar: "مختار" }, language)}
@@ -236,11 +337,12 @@ export function ClientQuoteComparisonPage() {
                   ) : (
                     <Button
                       type="button"
-                      disabled={data.locked || pendingId === quote._id || !isBetterAuthConfigured}
-                      onClick={() => void handleSelect(quote._id)}
+                      variant={isFullBasketSelected ? "default" : "outline"}
+                      disabled={data.locked || !isBetterAuthConfigured}
+                      onClick={() => handleAwardAllToQuote(quote._id)}
                     >
-                      {pendingId === quote._id ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="size-4" aria-hidden="true" />}
-                      {localize({ en: "Select this quote", ar: "اختر هذا العرض" }, language)}
+                      <CheckCircle2 className="size-4" aria-hidden="true" />
+                      {localize({ en: "Award all lines to this supplier", ar: "اعتمد كل البنود لهذا المورد" }, language)}
                     </Button>
                   )}
                 </article>
@@ -248,7 +350,37 @@ export function ClientQuoteComparisonPage() {
             })}
           </section>
 
-          <DashboardCard title={localize({ en: "Per-line comparison", ar: "مقارنة لكل بند" }, language)}>
+          <DashboardCard
+            title={localize({ en: "Award by line item", ar: "تخصيص لكل بند" }, language)}
+            description={localize(
+              { en: "Pick the best supplier per line, or award all to one.", ar: "اختر المورد الأفضل لكل بند، أو اعتمد الكل لمورد واحد." },
+              language
+            )}
+          >
+            <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
+              <span className="font-semibold">
+                {localize({ en: "Awarded total", ar: "إجمالي التوزيع" }, language)}: {formatCurrency(awardSummary.total, language)}
+              </span>
+              <StatusBadge tone={awardSummary.isSplit ? "warning" : "info"}>
+                {awardSummary.isSplit
+                  ? localize({ en: "Split award", ar: "توزيع متعدد الموردين" }, language)
+                  : localize({ en: "Single supplier award", ar: "مورد واحد" }, language)}
+              </StatusBadge>
+              <span className="text-muted-foreground">
+                {awardSummary.uniqueQuoteCount} {localize({ en: "supplier(s)", ar: "مورد" }, language)} · {awardSummary.lineItemCount} {localize({ en: "lines", ar: "بنود" }, language)}
+              </span>
+              {!data.locked ? (
+                <Button
+                  type="button"
+                  className="ms-auto"
+                  disabled={!awardSummary.isFullyAssigned || isLocking}
+                  onClick={() => void handleLockAwards()}
+                >
+                  {isLocking ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Lock className="size-4" aria-hidden="true" />}
+                  {localize({ en: "Lock awards", ar: "تأكيد التوزيع" }, language)}
+                </Button>
+              ) : null}
+            </div>
             <DataTable
               rows={data.lineItems}
               emptyLabel={localize({ en: "No line items.", ar: "لا توجد بنود." }, language)}
@@ -267,15 +399,28 @@ export function ClientQuoteComparisonPage() {
                   header: quote.supplierAnonymousId,
                   cell: (item: typeof data.lineItems[number]) => {
                     const line = quote.lineItems.find((entry) => entry.rfqLineItemId === item._id);
-                    return line ? (
-                      <span>
-                        {formatCurrency(line.clientFinalUnitPrice, language)}
-                        <span className="ms-1 text-xs text-muted-foreground">
-                          ({formatCurrency(line.clientFinalTotalPrice, language)})
+                    if (!line) {
+                      return <span className="text-xs text-muted-foreground">—</span>;
+                    }
+                    const isAwarded = awards[item._id] === quote._id;
+                    return (
+                      <button
+                        type="button"
+                        disabled={data.locked || !isBetterAuthConfigured}
+                        onClick={() => handleAwardLineItem(item._id, quote._id)}
+                        className={cn(
+                          "flex w-full flex-col items-start gap-1 rounded-md border px-2 py-1.5 text-start transition",
+                          isAwarded
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-transparent hover:border-border/60",
+                          (data.locked || !isBetterAuthConfigured) && "cursor-default opacity-70"
+                        )}
+                      >
+                        <span className="font-medium">{formatCurrency(line.clientFinalUnitPrice, language)}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {formatCurrency(line.clientFinalTotalPrice, language)}
                         </span>
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
+                      </button>
                     );
                   }
                 }))

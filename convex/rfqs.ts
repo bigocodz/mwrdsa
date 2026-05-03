@@ -3,8 +3,11 @@ import { paginationOptsValidator } from "convex/server";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { refreshSupplierAnalyticsForActivity } from "./analytics";
+import { lookupIdempotentResult, recordIdempotentResult } from "./idempotency";
 import { notifyOrganization } from "./notifications";
+import { withMetrics } from "./observability";
 import { assertActiveUser, assertHasPermission, assertSameOrganization } from "./rbac";
+import { assertWithinRateLimit, RATE_LIMIT_POLICIES } from "./rateLimits";
 
 const CLIENT_RFQ_LIST_LIMIT = 100;
 const OPERATIONS_RFQ_LIST_LIMIT = 150;
@@ -336,55 +339,93 @@ export const createRfq = mutation({
 export const submitRfq = mutation({
   args: {
     rfqId: v.id("rfqs"),
-    actorUserId: v.id("users")
+    actorUserId: v.id("users"),
+    idempotencyKey: v.optional(v.string())
   },
   handler: async (ctx, args) => {
-    const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
-    assertHasPermission(actor, "rfq:submit");
-    const rfq = await ctx.db.get(args.rfqId);
-    if (!rfq) {
-      throw new Error("RFQ not found.");
-    }
-    assertSameOrganization(actor, rfq.clientOrganizationId);
+    return await withMetrics(ctx, "rfqs.submitRfq", async (recordMetric) => {
+      const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
+      assertHasPermission(actor, "rfq:submit");
 
-    if (rfq.status !== "draft") {
-      throw new Error("Only draft RFQs can be submitted.");
-    }
+      if (args.idempotencyKey) {
+        const cached = await lookupIdempotentResult(ctx, args.actorUserId, "rfq.submit", args.idempotencyKey);
+        if (cached !== undefined) {
+          await recordMetric({
+            outcome: "success",
+            durationMs: 0,
+            actorUserId: args.actorUserId,
+            organizationId: actor.organizationId as Id<"organizations">
+          });
+          return args.rfqId;
+        }
+      }
 
-    const lineItems = await ctx.db
-      .query("rfqLineItems")
-      .withIndex("by_rfq", (q) => q.eq("rfqId", args.rfqId))
-      .collect();
-    if (lineItems.length === 0) {
-      throw new Error("Add at least one line item before submitting the RFQ.");
-    }
+      await assertWithinRateLimit(ctx, args.actorUserId, RATE_LIMIT_POLICIES.rfqSubmit);
 
-    const now = Date.now();
-    await ctx.db.patch(args.rfqId, {
-      status: "submitted",
-      updatedAt: now
-    });
+      const rfq = await ctx.db.get(args.rfqId);
+      if (!rfq) {
+        throw new Error("RFQ not found.");
+      }
+      assertSameOrganization(actor, rfq.clientOrganizationId);
 
-    await ctx.db.insert("auditLogs", {
-      actorUserId: args.actorUserId,
-      organizationId: rfq.clientOrganizationId,
-      action: "rfq.submitted",
-      entityType: "rfq",
-      entityId: args.rfqId,
-      summary: "RFQ submitted for admin triage",
-      createdAt: now
-    });
+      if (rfq.status !== "draft") {
+        throw new Error("Only draft RFQs can be submitted.");
+      }
 
-    const adminOrgs = await ctx.db.query("organizations").withIndex("by_type", (q) => q.eq("type", "admin")).collect();
-    for (const adminOrg of adminOrgs) {
-      await notifyOrganization(ctx, adminOrg._id, {
-        type: "rfq.submitted",
-        titleAr: "طلب تسعير جديد",
-        titleEn: "New RFQ submitted",
-        bodyAr: `تم استلام طلب تسعير جديد رقم ${args.rfqId.slice(-6).toUpperCase()}.`,
-        bodyEn: `New RFQ ${args.rfqId.slice(-6).toUpperCase()} is awaiting triage.`
+      const lineItems = await ctx.db
+        .query("rfqLineItems")
+        .withIndex("by_rfq", (q) => q.eq("rfqId", args.rfqId))
+        .collect();
+      if (lineItems.length === 0) {
+        throw new Error("Add at least one line item before submitting the RFQ.");
+      }
+
+      const now = Date.now();
+      await ctx.db.patch(args.rfqId, {
+        status: "submitted",
+        updatedAt: now
       });
-    }
+
+      if (args.idempotencyKey) {
+        await recordIdempotentResult(ctx, {
+          actorUserId: args.actorUserId,
+          action: "rfq.submit",
+          key: args.idempotencyKey,
+          resultEntityType: "rfq",
+          resultEntityId: args.rfqId
+        });
+      }
+
+      await ctx.db.insert("auditLogs", {
+        actorUserId: args.actorUserId,
+        organizationId: rfq.clientOrganizationId,
+        action: "rfq.submitted",
+        entityType: "rfq",
+        entityId: args.rfqId,
+        summary: "RFQ submitted for admin triage",
+        createdAt: now
+      });
+
+      const adminOrgs = await ctx.db.query("organizations").withIndex("by_type", (q) => q.eq("type", "admin")).collect();
+      for (const adminOrg of adminOrgs) {
+        await notifyOrganization(ctx, adminOrg._id, {
+          type: "rfq.submitted",
+          titleAr: "طلب تسعير جديد",
+          titleEn: "New RFQ submitted",
+          bodyAr: `تم استلام طلب تسعير جديد رقم ${args.rfqId.slice(-6).toUpperCase()}.`,
+          bodyEn: `New RFQ ${args.rfqId.slice(-6).toUpperCase()} is awaiting triage.`
+        });
+      }
+
+      await recordMetric({
+        outcome: "success",
+        durationMs: Date.now() - now,
+        actorUserId: args.actorUserId,
+        organizationId: rfq.clientOrganizationId
+      });
+
+      return args.rfqId;
+    });
   }
 });
 

@@ -190,3 +190,38 @@ Status: implemented.
 - Added client APIs to list active saved carts, save the current RFQ cart, and delete saved carts with audit entries.
 - Wired the client RFQ page to save, load, and delete reusable RFQ carts without losing department, branch, cost center, delivery date, or notes.
 - Added backend and frontend contract coverage for the saved-cart PRD workflow.
+
+## Slice 11.5 — Three Vite builds + per-portal bundles
+
+Status: implemented.
+
+- Added `apps/client/`, `apps/supplier/`, `apps/backoffice/` as three thin Vite entry points sharing `src/`.
+- Three per-portal vite configs (`vite.config.client.ts`, `vite.config.supplier.ts`, `vite.config.backoffice.ts`) inject a `__BUILD_PORTAL__` flag that `getBuildPortalType()` reads.
+- `ProtectedRoute` refuses any route whose `portal` does not match the build flag, so a hostile route push to a foreign portal lands on `/unauthorized` regardless of role.
+- Split `src/routes/router.tsx` into `client-router.tsx`, `supplier-router.tsx`, `backoffice-router.tsx`. Each portal bundle imports only its own pages.
+- `pnpm dev:client | dev:supplier | dev:backoffice` on ports 5173/5174/5175. `pnpm build` builds all three into `dist/{client,supplier,backoffice}/`.
+- Added isolation contract test that fails if a foreign portal's pages leak into another bundle's router.
+
+## Slice 11.6 — SaaS guarantees: idempotency + rate limits + scheduler + observability
+
+Status: implemented.
+
+- Audited every `withIndex(...)` in `convex/`. The non-tenant indexes (`by_status_updated_at`, `by_visible`, `by_active`, `by_approved_at`, `by_day`) are used exclusively by admin queues that are supposed to be cross-tenant, all bounded by `take(N)` or pagination. No lookups need rescoping.
+- Added `idempotencyKeys` table indexed by `(actorUserId, action, key)` plus `lookupIdempotentResult` / `recordIdempotentResult` helpers. 24 h TTL by default.
+- Added `rateLimits` table indexed by `(actorUserId, action, windowStart)` plus `assertWithinRateLimit` helper and a `RATE_LIMIT_POLICIES` table covering public registration, RFQ submit, supplier offer upsert, payment intent create, and product addition request.
+- Added `mutationMetrics` table with `withMetrics` tracer that samples successful mutations at 1 % and records 100 % of errors with `(actorUserId, organizationId, durationMs, errorClass)`.
+- Wired idempotency into `submitRfq` and `generatePoFromSelectedQuote`; wired rate limits into `submitRfq`, `upsertSupplierOffer`, and `submitProductAdditionRequest`; wired `withMetrics` into `submitRfq`.
+- Added `convex/scheduled.ts` with internal mutations and `convex/crons.ts` registering hourly sweeps for expired saved carts and idempotency keys, six-hourly rate-limit cleanup, and daily mutation-metric retention (7 days).
+- Updated UI call sites (`submitRfq` from rfq detail page and rfqs page, `generatePo` from quote comparison page) to pass `crypto.randomUUID()` per click so duplicate clicks and network retries coalesce server-side.
+- Added a backend contract test asserting all of the above stay wired.
+
+## Eleventh Implementation Slice
+
+Status: implemented.
+
+- Added `awardedQuoteId` to RFQ line items and `awardedRfqLineItemIds`/`awardKind` to purchase orders so that split awards survive PO generation and analytics.
+- Added `quotes.selectAwardsByLineItem` mutation: validates that every line is awarded, that the chosen supplier quote is still released and in-validity, and that the supplier actually priced the line. Marks the quote(s) as `selected` and the rest as `lost`, then locks the RFQ.
+- Updated `purchaseOrders.generatePoFromSelectedQuote` to group line items by their awarded quote and emit one PO per unique supplier, scoped to the awarded line items.
+- Updated the PO snapshot loader, supplier order line loader, and analytics helpers to filter line items to the PO's awarded subset so split-award POs do not double-count revenue, supplier cost, or coverage.
+- Replaced the client quote comparison page with a per-line award flow: the cheapest eligible supplier is preselected per line, "Award all" still supports full-basket selection, and a new "Lock awards" action submits the per-line awards before "Generate PO" creates the linked POs.
+- Added the `quote_split_awarded` analytics event and a backend contract test for the schema additions, mutation guards, and PO generation grouping.

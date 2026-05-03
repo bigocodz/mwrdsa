@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertActiveUser, assertHasPermission, assertSameOrganization } from "./rbac";
+import { assertWithinRateLimit, RATE_LIMIT_POLICIES } from "./rateLimits";
 
 type ReadCtx = QueryCtx | MutationCtx;
 
@@ -257,6 +258,7 @@ export const upsertSupplierOffer = mutation({
   },
   handler: async (ctx, args) => {
     const { actor, supplierOrganizationId } = await assertSupplierActor(ctx, args.actorUserId);
+    await assertWithinRateLimit(ctx, args.actorUserId, RATE_LIMIT_POLICIES.supplierOfferUpsert);
     const product = await ctx.db.get(args.productId);
     if (!product || !product.isVisible) {
       throw new Error("Active master catalog product is required.");
@@ -338,6 +340,7 @@ export const submitProductAdditionRequest = mutation({
   },
   handler: async (ctx, args) => {
     const { supplierOrganizationId } = await assertSupplierActor(ctx, args.actorUserId);
+    await assertWithinRateLimit(ctx, args.actorUserId, RATE_LIMIT_POLICIES.productAdditionRequest);
     if (args.categoryId) {
       const category = await ctx.db.get(args.categoryId);
       if (!category || !category.isActive) {

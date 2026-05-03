@@ -153,7 +153,11 @@ export function ClientRfqDetailPage() {
     setIsSubmitting(true);
     setSubmitMessage(null);
     try {
-      await submitRfq({ rfqId: rfqId as Id<"rfqs">, actorUserId: user.id as Id<"users"> });
+      await submitRfq({
+        rfqId: rfqId as Id<"rfqs">,
+        actorUserId: user.id as Id<"users">,
+        idempotencyKey: crypto.randomUUID()
+      });
       setSubmitMessage({ tone: "success", text: localize({ en: "RFQ submitted to MWRD.", ar: "تم إرسال طلب التسعير إلى مورد." }, language) });
     } catch (error) {
       const message = error instanceof Error ? error.message : "";

@@ -1284,6 +1284,21 @@ export const getRfqQuoteComparison = query({
   }
 });
 
+async function ensureQuoteSelectable(ctx: ReadCtx, rfqId: Id<"rfqs">, quoteId: Id<"supplierQuotes">) {
+  const quote = await ctx.db.get(quoteId);
+  if (!quote || quote.rfqId !== rfqId) {
+    throw new Error("Quote does not belong to this RFQ.");
+  }
+  if (quote.status !== "released") {
+    throw new Error("Quote is no longer available for selection.");
+  }
+  const expiry = new Date(`${quote.validUntil}T23:59:59`).getTime();
+  if (Number.isFinite(expiry) && expiry < Date.now()) {
+    throw new Error("Quote validity has expired.");
+  }
+  return quote;
+}
+
 export const selectQuote = mutation({
   args: {
     actorUserId: v.id("users"),
@@ -1303,18 +1318,7 @@ export const selectQuote = mutation({
       throw new Error("Only released RFQs can have a quote selected.");
     }
 
-    const quote = await ctx.db.get(args.quoteId);
-    if (!quote || quote.rfqId !== args.rfqId) {
-      throw new Error("Quote does not belong to this RFQ.");
-    }
-    if (quote.status !== "released") {
-      throw new Error("Quote is no longer available for selection.");
-    }
-
-    const expiry = new Date(`${quote.validUntil}T23:59:59`).getTime();
-    if (Number.isFinite(expiry) && expiry < Date.now()) {
-      throw new Error("Quote validity has expired.");
-    }
+    await ensureQuoteSelectable(ctx, args.rfqId, args.quoteId);
 
     const now = Date.now();
     await ctx.db.patch(args.quoteId, {
@@ -1333,6 +1337,14 @@ export const selectQuote = mutation({
           updatedAt: now
         });
       }
+    }
+
+    const rfqLineItems = await ctx.db
+      .query("rfqLineItems")
+      .withIndex("by_rfq", (q) => q.eq("rfqId", args.rfqId))
+      .collect();
+    for (const item of rfqLineItems) {
+      await ctx.db.patch(item._id, { awardedQuoteId: args.quoteId });
     }
 
     await ctx.db.patch(args.rfqId, {
@@ -1360,6 +1372,133 @@ export const selectQuote = mutation({
         bodyEn: `Client selected a quote for RFQ ${args.rfqId.slice(-6).toUpperCase()}.`
       });
     }
+  }
+});
+
+export const selectAwardsByLineItem = mutation({
+  args: {
+    actorUserId: v.id("users"),
+    rfqId: v.id("rfqs"),
+    awards: v.array(
+      v.object({
+        rfqLineItemId: v.id("rfqLineItems"),
+        quoteId: v.id("supplierQuotes")
+      })
+    )
+  },
+  handler: async (ctx, args) => {
+    const actor = assertActiveUser(await ctx.db.get(args.actorUserId));
+    assertHasPermission(actor, "rfq:create");
+
+    const rfq = await ctx.db.get(args.rfqId);
+    if (!rfq) {
+      throw new Error("RFQ not found.");
+    }
+    assertSameOrganization(actor, rfq.clientOrganizationId);
+    if (rfq.status !== "released") {
+      throw new Error("Only released RFQs can have awards selected.");
+    }
+
+    if (args.awards.length === 0) {
+      throw new Error("At least one line item award is required.");
+    }
+
+    const lineItems = await ctx.db
+      .query("rfqLineItems")
+      .withIndex("by_rfq", (q) => q.eq("rfqId", args.rfqId))
+      .collect();
+    if (args.awards.length !== lineItems.length) {
+      throw new Error("Every RFQ line item must be awarded.");
+    }
+
+    const lineItemIds = new Set(lineItems.map((item) => item._id));
+    const awardedLineIds = new Set<string>();
+    for (const award of args.awards) {
+      if (!lineItemIds.has(award.rfqLineItemId)) {
+        throw new Error("Award references a line item outside this RFQ.");
+      }
+      if (awardedLineIds.has(award.rfqLineItemId)) {
+        throw new Error("A line item cannot be awarded twice.");
+      }
+      awardedLineIds.add(award.rfqLineItemId);
+    }
+
+    const uniqueQuoteIds = Array.from(new Set(args.awards.map((award) => award.quoteId)));
+    const quotesById = new Map<Id<"supplierQuotes">, Doc<"supplierQuotes">>();
+    for (const quoteId of uniqueQuoteIds) {
+      const quote = await ensureQuoteSelectable(ctx, args.rfqId, quoteId);
+      quotesById.set(quoteId, quote);
+    }
+
+    const quoteLinesByQuote = new Map<Id<"supplierQuotes">, Set<Id<"rfqLineItems">>>();
+    for (const quoteId of uniqueQuoteIds) {
+      const quoteLines = await ctx.db
+        .query("supplierQuoteLineItems")
+        .withIndex("by_quote", (q) => q.eq("quoteId", quoteId))
+        .collect();
+      quoteLinesByQuote.set(quoteId, new Set(quoteLines.map((line) => line.rfqLineItemId)));
+    }
+
+    for (const award of args.awards) {
+      const covered = quoteLinesByQuote.get(award.quoteId);
+      if (!covered || !covered.has(award.rfqLineItemId)) {
+        throw new Error("Selected quote does not price this line item.");
+      }
+    }
+
+    const now = Date.now();
+    for (const award of args.awards) {
+      await ctx.db.patch(award.rfqLineItemId, { awardedQuoteId: award.quoteId });
+    }
+
+    const allReleased = await ctx.db
+      .query("supplierQuotes")
+      .withIndex("by_rfq_status", (q) => q.eq("rfqId", args.rfqId).eq("status", "released"))
+      .collect();
+    for (const quote of allReleased) {
+      if (uniqueQuoteIds.includes(quote._id)) {
+        await ctx.db.patch(quote._id, { status: "selected", updatedAt: now });
+      } else {
+        await ctx.db.patch(quote._id, { status: "lost", updatedAt: now });
+      }
+    }
+
+    await ctx.db.patch(args.rfqId, {
+      status: "selected",
+      updatedAt: now
+    });
+
+    const isSplit = uniqueQuoteIds.length > 1;
+    const summary = isSplit
+      ? `Client split award across ${uniqueQuoteIds.length} suppliers — RFQ locked`
+      : "Client selected quote — RFQ locked";
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      organizationId: rfq.clientOrganizationId,
+      action: isSplit ? "quote.split_awarded" : "quote.selected",
+      entityType: "rfq",
+      entityId: args.rfqId,
+      summary,
+      createdAt: now
+    });
+
+    const adminOrgs = await ctx.db.query("organizations").withIndex("by_type", (q) => q.eq("type", "admin")).collect();
+    for (const adminOrg of adminOrgs) {
+      await notifyOrganization(ctx, adminOrg._id, {
+        type: isSplit ? "quote.split_awarded" : "quote.selected",
+        titleAr: isSplit ? "تم توزيع الجائزة" : "تم اختيار عرض",
+        titleEn: isSplit ? "Award split across suppliers" : "Quote selected",
+        bodyAr: isSplit
+          ? `وزّع العميل الجائزة على ${uniqueQuoteIds.length} موردين للطلب ${args.rfqId.slice(-6).toUpperCase()}.`
+          : `قام العميل باختيار عرض للطلب ${args.rfqId.slice(-6).toUpperCase()}.`,
+        bodyEn: isSplit
+          ? `Client split award across ${uniqueQuoteIds.length} suppliers for RFQ ${args.rfqId.slice(-6).toUpperCase()}.`
+          : `Client selected a quote for RFQ ${args.rfqId.slice(-6).toUpperCase()}.`
+      });
+    }
+
+    return { awardedQuoteIds: uniqueQuoteIds, isSplit };
   }
 });
 

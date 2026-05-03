@@ -174,8 +174,11 @@ export default defineSchema({
     descriptionEn: v.optional(v.string()),
     quantity: v.number(),
     unit: v.string(),
+    awardedQuoteId: v.optional(v.id("supplierQuotes")),
     createdAt: v.number()
-  }).index("by_rfq", ["rfqId"]),
+  })
+    .index("by_rfq", ["rfqId"])
+    .index("by_awarded_quote", ["awardedQuoteId"]),
 
   rfqAttachments: defineTable({
     rfqId: v.id("rfqs"),
@@ -326,6 +329,8 @@ export default defineSchema({
     clientOrganizationId: v.id("organizations"),
     status: poStatus,
     termsTemplateId: v.optional(v.string()),
+    awardedRfqLineItemIds: v.optional(v.array(v.id("rfqLineItems"))),
+    awardKind: v.optional(v.union(v.literal("full"), v.literal("split"))),
     approvedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number()
@@ -424,6 +429,40 @@ export default defineSchema({
     .index("by_event_name", ["eventName"])
     .index("by_event_created_at", ["eventName", "createdAt"])
     .index("by_organization_event", ["organizationId", "eventName"]),
+
+  idempotencyKeys: defineTable({
+    actorUserId: v.id("users"),
+    action: v.string(),
+    key: v.string(),
+    resultEntityType: v.optional(v.string()),
+    resultEntityId: v.optional(v.string()),
+    expiresAt: v.number(),
+    createdAt: v.number()
+  })
+    .index("by_actor_action_key", ["actorUserId", "action", "key"])
+    .index("by_expires_at", ["expiresAt"]),
+
+  rateLimits: defineTable({
+    actorUserId: v.id("users"),
+    action: v.string(),
+    windowStart: v.number(),
+    count: v.number(),
+    updatedAt: v.number()
+  })
+    .index("by_actor_action_window", ["actorUserId", "action", "windowStart"]),
+
+  mutationMetrics: defineTable({
+    mutation: v.string(),
+    actorUserId: v.optional(v.id("users")),
+    organizationId: v.optional(v.id("organizations")),
+    durationMs: v.number(),
+    outcome: v.union(v.literal("success"), v.literal("error")),
+    errorClass: v.optional(v.string()),
+    createdAt: v.number()
+  })
+    .index("by_mutation_created_at", ["mutation", "createdAt"])
+    .index("by_outcome_created_at", ["outcome", "createdAt"])
+    .index("by_created_at", ["createdAt"]),
 
   adminRevenueDailySummaries: defineTable({
     day: v.string(),

@@ -13,5 +13,13 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "eslint.config.js", "postcss.config.js", "tailwind.config.ts"]
+  "include": [
+    "vite.config.ts",
+    "vite.config.client.ts",
+    "vite.config.supplier.ts",
+    "vite.config.backoffice.ts",
+    "eslint.config.js",
+    "postcss.config.js",
+    "tailwind.config.ts"
+  ]
 }

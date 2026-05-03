@@ -37,10 +37,14 @@ async function loadOrderTotals(ctx: QueryCtx, purchaseOrderId: Id<"purchaseOrder
   if (!purchaseOrder) {
     return { clientTotal: 0, lineItemCount: 0 };
   }
-  const lineItems = await ctx.db
+  const allLineItems = await ctx.db
     .query("supplierQuoteLineItems")
     .withIndex("by_quote", (q) => q.eq("quoteId", purchaseOrder.selectedQuoteId))
     .collect();
+  const scope = purchaseOrder.awardedRfqLineItemIds && purchaseOrder.awardedRfqLineItemIds.length > 0
+    ? new Set<Id<"rfqLineItems">>(purchaseOrder.awardedRfqLineItemIds)
+    : null;
+  const lineItems = scope ? allLineItems.filter((item) => scope.has(item.rfqLineItemId)) : allLineItems;
   const clientTotal = lineItems.reduce((sum, item) => sum + (item.clientFinalTotalPrice ?? 0), 0);
   return { clientTotal, lineItemCount: lineItems.length };
 }
@@ -59,10 +63,14 @@ async function loadOrderLineItems(ctx: QueryCtx, purchaseOrderId: Id<"purchaseOr
       product: { _id: Id<"products">; sku: string; nameAr: string; nameEn: string } | null;
     }>;
   }
-  const quoteLineItems = await ctx.db
+  const allQuoteLineItems = await ctx.db
     .query("supplierQuoteLineItems")
     .withIndex("by_quote", (q) => q.eq("quoteId", purchaseOrder.selectedQuoteId))
     .collect();
+  const scope = purchaseOrder.awardedRfqLineItemIds && purchaseOrder.awardedRfqLineItemIds.length > 0
+    ? new Set<Id<"rfqLineItems">>(purchaseOrder.awardedRfqLineItemIds)
+    : null;
+  const quoteLineItems = scope ? allQuoteLineItems.filter((item) => scope.has(item.rfqLineItemId)) : allQuoteLineItems;
   return await Promise.all(
     quoteLineItems.map(async (item) => {
       const rfqLineItem = await ctx.db.get(item.rfqLineItemId);
